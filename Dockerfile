@@ -23,6 +23,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
+# Criar usuário não-root ANTES de copiar arquivos
+RUN useradd --create-home --shell /bin/bash app
+
 COPY main.py .
 
 # Primeiro cria o diretório e copia o .keep
@@ -45,8 +48,16 @@ RUN echo "=== DIAGNÓSTICO COMPLETO APÓS COPY ===" && \
     (test -f lstm_files/scaler.joblib && echo "scaler.joblib: $(ls -lh lstm_files/scaler.joblib)" || echo "scaler.joblib: NÃO ENCONTRADO") && \
     echo "=== FIM DO DIAGNÓSTICO ==="
 
-# Garantir permissões corretas (remover teste que falha o build)
-RUN chmod -R 755 lstm_files
+# Garantir permissões corretas e ownership
+RUN chmod -R 755 lstm_files && \
+    chown -R app:app /app
+
+# Debug final APÓS mudança de ownership
+RUN echo "=== VERIFICAÇÃO FINAL APÓS CHOWN ===" && \
+    ls -la lstm_files/ && \
+    echo "=== PERMISSÕES DOS ARQUIVOS ===" && \
+    find lstm_files/ -name "*.joblib" -exec ls -lh {} \; || echo "Nenhum arquivo .joblib encontrado após chown" && \
+    echo "=== FIM VERIFICAÇÃO FINAL ==="
 
 # Avisar sobre status dos arquivos mas não falhar o build
 RUN if [ ! -f lstm_files/lstm_model.joblib ]; then \
@@ -56,9 +67,7 @@ RUN if [ ! -f lstm_files/lstm_model.joblib ]; then \
         echo "AVISO: scaler.joblib não encontrado - API funcionará em modo diagnóstico"; \
     fi
 
-# Criar usuário não-root para segurança
-RUN useradd --create-home --shell /bin/bash app && \
-    chown -R app:app /app
+# Mudar para usuário não-root APENAS no final
 USER app
 
 # Expor porta
