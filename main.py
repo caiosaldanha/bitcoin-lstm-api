@@ -1,4 +1,91 @@
+import os
+import joblib
+import datetime
+import numpy as np
+import yfinance as yf
+import time
+import traceback
+import json
 from typing import Dict
+
+from fastapi import FastAPI, HTTPException, Request
+from pydantic import BaseModel
+from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
+from fastapi.responses import Response
+
+
+# Pydantic Models
+class PredictionResponse(BaseModel):
+    current_date: str
+    next_day_prediction: float
+    last_known_price: float
+
+
+class ModelEvaluationResponse(BaseModel):
+    model_exists: bool
+    training_date: str
+    rmse: float
+    mae: float
+    r2: float
+    training_duration: float
+    data_points_used: int
+
+
+class MonitoringResponse(BaseModel):
+    timestamp: str
+    cpu_usage_percent: float
+    memory_usage_mb: float
+    total_requests: int
+    total_predictions: int
+    average_response_time_ms: float
+    model_status: str
+
+
+# Prometheus Metrics
+REQUEST_COUNT = Counter('bitcoin_lstm_requests_total', 'Total requests', ['method', 'endpoint', 'status'])
+REQUEST_DURATION = Histogram('bitcoin_lstm_request_duration_seconds', 'Request duration', ['method', 'endpoint'])
+MODEL_STATUS = Gauge('bitcoin_lstm_model_status', 'Model status: 1=ready, 0=needs_training')
+PREDICTION_COUNT = Counter('bitcoin_lstm_prediction_total', 'Total predictions made')
+ERROR_COUNT = Counter('bitcoin_lstm_error_total', 'Total errors', ['endpoint'])
+
+
+# FastAPI App
+app = FastAPI(title="Bitcoin LSTM Predictor", version="1.0.0")
+
+
+# Middleware para métricas Prometheus
+@app.middleware("http")
+async def prometheus_middleware(request: Request, call_next):
+    start_time = time.time()
+    try:
+        response = await call_next(request)
+        status = str(response.status_code)
+    except Exception:
+        status = "500"
+        raise
+    duration = time.time() - start_time
+    method = request.method
+    endpoint = request.url.path
+    REQUEST_COUNT.labels(method=method, endpoint=endpoint, status=status).inc()
+    REQUEST_DURATION.labels(method=method, endpoint=endpoint).observe(duration)
+    return response
+
+
+# Routes
+@app.get("/")
+async def root():
+    return {
+        "message": "Bitcoin LSTM Predictor API", 
+        "status": "running",
+        "version": "1.0.0",
+        "timestamp": datetime.datetime.now().isoformat(),
+        "model_status": "ready" if (
+            os.path.exists('lstm_files/lstm_model.joblib') and 
+            os.path.exists('lstm_files/scaler.joblib')
+        ) else "needs_training"
+    }
+
+
 # Rota para checagem detalhada dos arquivos do modelo
 @app.get("/model-check")
 async def model_check() -> Dict:
@@ -43,94 +130,6 @@ async def model_check() -> Dict:
         logs.append(f"Erro geral na checagem: {str(e)}")
     result["details"] = logs
     return result
-
-from fastapi import FastAPI, HTTPException, Request
-from pydantic import BaseModel
-
-
-import os
-import joblib
-import datetime
-import numpy as np
-import yfinance as yf
-import time
-import traceback
-from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
-from fastapi.responses import Response
-
-
-
-class PredictionResponse(BaseModel):
-    current_date: str
-    next_day_prediction: float
-    last_known_price: float
-
-class ModelEvaluationResponse(BaseModel):
-    model_exists: bool
-    training_date: str
-    rmse: float
-    mae: float
-    r2: float
-    training_duration: float
-    data_points_used: int
-
-class MonitoringResponse(BaseModel):
-    timestamp: str
-    cpu_usage_percent: float
-    memory_usage_mb: float
-    total_requests: int
-    total_predictions: int
-    average_response_time_ms: float
-    model_status: str
-
-
-REQUEST_COUNT = Counter('bitcoin_lstm_requests_total', 'Total requests', ['method', 'endpoint', 'status'])
-REQUEST_DURATION = Histogram('bitcoin_lstm_request_duration_seconds', 'Request duration', ['method', 'endpoint'])
-MODEL_STATUS = Gauge('bitcoin_lstm_model_status', 'Model status: 1=ready, 0=needs_training')
-PREDICTION_COUNT = Counter('bitcoin_lstm_prediction_total', 'Total predictions made')
-ERROR_COUNT = Counter('bitcoin_lstm_error_total', 'Total errors', ['endpoint'])
-
-app = FastAPI(title="Bitcoin LSTM Predictor", version="1.0.0")
-
-
-# Middleware para métricas Prometheus
-@app.middleware("http")
-async def prometheus_middleware(request: Request, call_next):
-    start_time = time.time()
-    try:
-        response = await call_next(request)
-        status = str(response.status_code)
-    except Exception:
-        status = "500"
-        raise
-    duration = time.time() - start_time
-    method = request.method
-    endpoint = request.url.path
-    REQUEST_COUNT.labels(method=method, endpoint=endpoint, status=status).inc()
-    REQUEST_DURATION.labels(method=method, endpoint=endpoint).observe(duration)
-    return response
-
-
-
-
-
-    # ...existing code...
-
-
-
-@app.get("/")
-async def root():
-    return {
-        "message": "Bitcoin LSTM Predictor API", 
-        "status": "running",
-        "version": "1.0.0",
-        "timestamp": datetime.datetime.now().isoformat(),
-        "model_status": "ready" if (
-            os.path.exists('lstm_files/lstm_model.joblib') and 
-            os.path.exists('lstm_files/scaler.joblib')
-        ) else "needs_training"
-    }
-
 
 
 @app.get("/predict", response_model=PredictionResponse)
@@ -196,7 +195,6 @@ async def model_info():
 @app.get("/evaluate", response_model=ModelEvaluationResponse)
 async def evaluate_model():
     """Rota para avaliar o modelo com métricas da fase de treino"""
-    import json
     try:
         if not os.path.exists('lstm_files/training_metrics.json'):
             ERROR_COUNT.labels(endpoint="/evaluate").inc()
