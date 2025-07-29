@@ -1,6 +1,27 @@
+
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
+import os
+import joblib
+import datetime
+import numpy as np
+import yfinance as yf
 
+
+
+class PredictionResponse(BaseModel):
+    current_date: str
+    next_day_prediction: float
+    last_known_price: float
+
+class ModelEvaluationResponse(BaseModel):
+    model_exists: bool
+    training_date: str
+    rmse: float
+    mae: float
+    r2: float
+    training_duration: float
+    data_points_used: int
 
 class MonitoringResponse(BaseModel):
     timestamp: str
