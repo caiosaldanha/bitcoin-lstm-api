@@ -15,59 +15,44 @@ from fastapi.responses import Response
 
 # Função para carregar modelo com compatibilidade de versões
 def load_model_safely(model_path):
-    """Carrega o modelo de forma segura, lidando com diferentes versões e formatos"""
+    """Carrega o modelo de forma segura, priorizando formato .keras"""
     import os
-    
-    # Primeiro verifica se é um modelo Keras salvo no formato nativo (PRIORIDADE)
-    keras_path = model_path.replace('.joblib', '.keras')
-    h5_path = model_path.replace('.joblib', '.h5')
+    import tensorflow as tf
     
     try:
-        # Tentativa 1: Carregar como modelo Keras nativo (.keras)
-        if os.path.exists(keras_path):
-            import tensorflow as tf
-            print(f"Carregando modelo Keras nativo: {keras_path}")
-            return tf.keras.models.load_model(keras_path)
+        # Prioridade 1: Carregar modelo no formato .keras (recomendado)
+        if model_path.endswith('.keras') and os.path.exists(model_path):
+            print(f"✅ Carregando modelo Keras nativo: {model_path}")
+            return tf.keras.models.load_model(model_path)
+        
+        # Prioridade 2: Se passou .joblib, procura .keras primeiro
+        if model_path.endswith('.joblib'):
+            keras_path = model_path.replace('.joblib', '.keras')
+            if os.path.exists(keras_path):
+                print(f"✅ Encontrado modelo .keras, usando: {keras_path}")
+                return tf.keras.models.load_model(keras_path)
+            
+            h5_path = model_path.replace('.joblib', '.h5')
+            if os.path.exists(h5_path):
+                print(f"✅ Encontrado modelo .h5, usando: {h5_path}")
+                return tf.keras.models.load_model(h5_path)
+        
+        # Prioridade 3: Carregar arquivo H5 se especificado
+        if model_path.endswith('.h5') and os.path.exists(model_path):
+            print(f"✅ Carregando modelo H5: {model_path}")
+            return tf.keras.models.load_model(model_path)
+        
+        # Último recurso: Tentar joblib (não recomendado)
+        if model_path.endswith('.joblib') and os.path.exists(model_path):
+            print(f"⚠️ Tentando carregar modelo joblib (não recomendado): {model_path}")
+            import joblib
+            return joblib.load(model_path)
+        
+        raise FileNotFoundError(f"❌ Modelo não encontrado: {model_path}")
+        
     except Exception as e:
-        print(f"Falha ao carregar modelo .keras: {e}")
-    
-    try:
-        # Tentativa 2: Carregar como modelo H5
-        if os.path.exists(h5_path):
-            import tensorflow as tf
-            print(f"Carregando modelo H5: {h5_path}")
-            return tf.keras.models.load_model(h5_path)
-    except Exception as e:
-        print(f"Falha ao carregar modelo .h5: {e}")
-    
-    # Se chegou aqui, não tem modelo em formato nativo, tenta joblib
-    print(f"Tentando carregar modelo joblib: {model_path}")
-    
-    try:
-        # Tentativa 3: Carregamento joblib normal
-        return joblib.load(model_path)
-    except (ImportError, ModuleNotFoundError) as e:
-        if 'keras' in str(e):
-            try:
-                # Tentativa 4: Com tensorflow.keras
-                import tensorflow as tf
-                import sys
-                if 'keras.src' in str(e):
-                    # Redirect keras imports to tensorflow.keras
-                    sys.modules['keras.src'] = tf.keras
-                    sys.modules['keras.src.models'] = tf.keras.models
-                    sys.modules['keras.src.models.sequential'] = tf.keras.models
-                
-                return joblib.load(model_path)
-            except Exception as e2:
-                raise Exception(f"Erro ao carregar modelo: {str(e)}. Tentativa alternativa falhou: {str(e2)}")
-        else:
-            raise e
-    except AttributeError as e:
-        if '_unpickle_model' in str(e):
-            raise Exception(f"❌ Modelo foi salvo incorretamente com joblib. Execute o script train_model.py para retreinar o modelo corretamente. Erro: {str(e)}")
-        else:
-            raise e
+        print(f"❌ Erro ao carregar modelo {model_path}: {e}")
+        raise
 
 
 def create_sequences(data, seq_length):
@@ -94,10 +79,26 @@ def train_bitcoin_lstm_internal():
         end_date = datetime.date.today()
         start_date = end_date - datetime.timedelta(days=2000)  # 2000 dias de dados
         
+        print(f"Tentando baixar dados de {start_date} até {end_date}")
         data = yf.download(ticker_symbol, start=start_date.strftime("%Y-%m-%d"), end=end_date.strftime("%Y-%m-%d"))
         
+        print(f"Dados baixados: {len(data)} registros")
+        
+        # Se não conseguir dados suficientes com 2000 dias, tenta períodos menores
         if len(data) < 100:
-            raise Exception("Dados insuficientes para treinamento")
+            print("⚠️ Poucos dados com 2000 dias, tentando 1000 dias...")
+            start_date = end_date - datetime.timedelta(days=1000)
+            data = yf.download(ticker_symbol, start=start_date.strftime("%Y-%m-%d"), end=end_date.strftime("%Y-%m-%d"))
+            print(f"Dados com 1000 dias: {len(data)} registros")
+            
+        if len(data) < 100:
+            print("⚠️ Poucos dados com 1000 dias, tentando 500 dias...")
+            start_date = end_date - datetime.timedelta(days=500)
+            data = yf.download(ticker_symbol, start=start_date.strftime("%Y-%m-%d"), end=end_date.strftime("%Y-%m-%d"))
+            print(f"Dados com 500 dias: {len(data)} registros")
+            
+        if len(data) < 50:
+            raise Exception(f"Dados insuficientes para treinamento. Obtidos apenas {len(data)} registros. Mínimo necessário: 50. Verifique conexão com a internet ou tente novamente mais tarde.")
         
         print(f"✅ Dados baixados: {len(data)} registros de {start_date} até {end_date}")
         
@@ -109,12 +110,26 @@ def train_bitcoin_lstm_internal():
         scaler = MinMaxScaler(feature_range=(0, 1))
         scaled_data = scaler.fit_transform(close_prices)
         
-        # Criar sequências
-        sequence_length = 40
+        # Criar sequências - ajusta sequence_length baseado na quantidade de dados
+        if len(data) >= 200:
+            sequence_length = 40
+        elif len(data) >= 100:
+            sequence_length = 20
+        else:
+            sequence_length = 10
+            
+        print(f"Usando sequence_length: {sequence_length} para {len(data)} registros")
+        
         X, y = create_sequences(scaled_data, sequence_length)
+        
+        if len(X) < 10:
+            raise Exception(f"Sequências insuficientes para treinamento. Obtidas {len(X)} sequências. Mínimo necessário: 10.")
         
         # Dividir em treino e teste
         train_size = int(len(X) * 0.8)
+        if train_size < 5:
+            train_size = len(X) - 2  # Deixa pelo menos 2 para teste
+            
         X_train, X_test = X[:train_size], X[train_size:]
         y_train, y_test = y[:train_size], y[train_size:]
         
@@ -143,10 +158,20 @@ def train_bitcoin_lstm_internal():
         print("🎯 Treinando modelo...")
         start_time = datetime.datetime.now()
         
+        # Ajusta epochs baseado na quantidade de dados
+        if len(data) >= 500:
+            epochs = 20
+        elif len(data) >= 200:
+            epochs = 15
+        else:
+            epochs = 10
+            
+        print(f"Treinando com {epochs} epochs para {len(data)} registros de dados")
+        
         history = model.fit(
             X_train, y_train,
-            epochs=50,
-            batch_size=32,
+            epochs=epochs,
+            batch_size=min(32, len(X_train) // 2),  # Ajusta batch_size também
             validation_data=(X_test, y_test),
             verbose=1
         )
@@ -331,7 +356,8 @@ async def root():
 async def model_check() -> Dict:
     """Verifica a existência dos arquivos do modelo e retorna logs detalhados"""
     logs = []
-    model_path = 'lstm_files/lstm_model.joblib'
+    # Prioridade: arquivo .keras
+    model_path = 'lstm_files/lstm_model.keras'
     scaler_path = 'lstm_files/scaler.joblib'
     
     # Adiciona informações de diagnóstico
@@ -356,13 +382,29 @@ async def model_check() -> Dict:
     }
     
     try:
+        # Verifica se existe o modelo .keras (prioridade)
         if os.path.exists(model_path):
             result["model_exists"] = True
             file_size = os.path.getsize(model_path)
-            logs.append(f"Arquivo encontrado: {model_path} (tamanho: {file_size} bytes)")
+            logs.append(f"✅ Modelo .keras encontrado: {model_path} (tamanho: {file_size} bytes)")
+        # Fallback para .h5
+        elif os.path.exists('lstm_files/lstm_model.h5'):
+            model_path = 'lstm_files/lstm_model.h5'
+            result["model_path"] = os.path.abspath(model_path)
+            result["model_exists"] = True
+            file_size = os.path.getsize(model_path)
+            logs.append(f"✅ Modelo .h5 encontrado: {model_path} (tamanho: {file_size} bytes)")
+        # Último recurso: .joblib
+        elif os.path.exists('lstm_files/lstm_model.joblib'):
+            model_path = 'lstm_files/lstm_model.joblib'
+            result["model_path"] = os.path.abspath(model_path)
+            result["model_exists"] = True
+            file_size = os.path.getsize(model_path)
+            logs.append(f"⚠️ Apenas modelo .joblib encontrado: {model_path} (tamanho: {file_size} bytes)")
+            logs.append("⚠️ Recomendado: Treinar novamente para gerar modelo .keras")
         else:
-            logs.append(f"Arquivo NÃO encontrado: {model_path}")
-            logs.append(f"Caminho absoluto: {os.path.abspath(model_path)}")
+            logs.append(f"❌ Nenhum modelo encontrado (.keras, .h5, .joblib)")
+            logs.append(f"❌ Caminho verificado: {os.path.abspath(model_path)}")
 
         if os.path.exists(scaler_path):
             result["scaler_exists"] = True
@@ -376,18 +418,18 @@ async def model_check() -> Dict:
         if result["model_exists"]:
             try:
                 model = load_model_safely(model_path)
-                logs.append(f"load_model_safely OK para {model_path}")
+                logs.append(f"✅ load_model_safely OK para {model_path}")
                 logs.append(f"Tipo do modelo: {type(model)}")
             except Exception as e:
-                logs.append(f"Erro ao carregar {model_path}: {str(e)}")
+                logs.append(f"❌ Erro ao carregar {model_path}: {str(e)}")
                 
         if result["scaler_exists"]:
             try:
                 scaler = joblib.load(scaler_path)
-                logs.append(f"joblib.load OK para {scaler_path}")
+                logs.append(f"✅ joblib.load OK para {scaler_path}")
                 logs.append(f"Tipo do scaler: {type(scaler)}")
             except Exception as e:
-                logs.append(f"Erro ao carregar {scaler_path}: {str(e)}")
+                logs.append(f"❌ Erro ao carregar {scaler_path}: {str(e)}")
                 
     except Exception as e:
         logs.append(f"Erro geral na checagem: {str(e)}")
@@ -405,7 +447,7 @@ async def predict_next_day():
             ERROR_COUNT.labels(endpoint="/predict").inc()
             raise HTTPException(status_code=404, detail="Modelo não encontrado. Execute o treinamento primeiro.")
 
-        model = load_model_safely('lstm_files/lstm_model.joblib')
+        model = load_model_safely('lstm_files/lstm_model.keras')
         scaler = joblib.load('lstm_files/scaler.joblib')
 
         ticker_symbol = "BTC-USD"

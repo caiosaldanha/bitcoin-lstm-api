@@ -34,10 +34,26 @@ def train_bitcoin_lstm():
     end_date = datetime.date.today()
     start_date = end_date - datetime.timedelta(days=2000)  # 2000 dias de dados
     
+    print(f"Tentando baixar dados de {start_date} até {end_date}")
     data = yf.download(ticker_symbol, start=start_date.strftime("%Y-%m-%d"), end=end_date.strftime("%Y-%m-%d"))
     
+    print(f"Dados baixados: {len(data)} registros")
+    
+    # Se não conseguir dados suficientes com 2000 dias, tenta períodos menores
     if len(data) < 100:
-        raise Exception("Dados insuficientes para treinamento")
+        print("⚠️ Poucos dados com 2000 dias, tentando 1000 dias...")
+        start_date = end_date - datetime.timedelta(days=1000)
+        data = yf.download(ticker_symbol, start=start_date.strftime("%Y-%m-%d"), end=end_date.strftime("%Y-%m-%d"))
+        print(f"Dados com 1000 dias: {len(data)} registros")
+        
+    if len(data) < 100:
+        print("⚠️ Poucos dados com 1000 dias, tentando 500 dias...")
+        start_date = end_date - datetime.timedelta(days=500)
+        data = yf.download(ticker_symbol, start=start_date.strftime("%Y-%m-%d"), end=end_date.strftime("%Y-%m-%d"))
+        print(f"Dados com 500 dias: {len(data)} registros")
+        
+    if len(data) < 50:
+        raise Exception(f"Dados insuficientes para treinamento. Obtidos apenas {len(data)} registros. Mínimo necessário: 50. Verifique conexão com a internet ou tente novamente mais tarde.")
     
     print(f"✅ Dados baixados: {len(data)} registros de {start_date} até {end_date}")
     
@@ -49,12 +65,26 @@ def train_bitcoin_lstm():
     scaler = MinMaxScaler(feature_range=(0, 1))
     scaled_data = scaler.fit_transform(close_prices)
     
-    # Criar sequências
-    sequence_length = 40
+    # Criar sequências - ajusta sequence_length baseado na quantidade de dados
+    if len(data) >= 200:
+        sequence_length = 40
+    elif len(data) >= 100:
+        sequence_length = 20
+    else:
+        sequence_length = 10
+        
+    print(f"Usando sequence_length: {sequence_length} para {len(data)} registros")
+    
     X, y = create_sequences(scaled_data, sequence_length)
+    
+    if len(X) < 10:
+        raise Exception(f"Sequências insuficientes para treinamento. Obtidas {len(X)} sequências. Mínimo necessário: 10.")
     
     # Dividir em treino e teste
     train_size = int(len(X) * 0.8)
+    if train_size < 5:
+        train_size = len(X) - 2  # Deixa pelo menos 2 para teste
+        
     X_train, X_test = X[:train_size], X[train_size:]
     y_train, y_test = y[:train_size], y[train_size:]
     
@@ -83,10 +113,22 @@ def train_bitcoin_lstm():
     print("🎯 Treinando modelo...")
     start_time = datetime.datetime.now()
     
+    # Ajusta epochs baseado na quantidade de dados
+    if len(X_train) >= 100:
+        epochs = 20
+    elif len(X_train) >= 50:
+        epochs = 15
+    else:
+        epochs = 10
+        
+    batch_size = min(32, len(X_train) // 4) if len(X_train) >= 16 else len(X_train)
+    
+    print(f"Usando {epochs} epochs e batch_size {batch_size} para {len(X_train)} amostras de treino")
+    
     history = model.fit(
         X_train, y_train,
-        epochs=1,
-        batch_size=32,
+        epochs=epochs,
+        batch_size=batch_size,
         validation_data=(X_test, y_test),
         verbose=1
     )
