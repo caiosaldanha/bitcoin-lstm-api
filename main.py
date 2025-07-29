@@ -111,6 +111,9 @@ def prepare_data():
     try:
         data = yf.download(ticker_symbol, start=start_date, end=end_date)
     except Exception as e:
+        if "No timezone found" in str(e):
+            logger.error(f"Erro de fuso horário ao baixar dados para {ticker_symbol}: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Erro de fuso horário para o símbolo {ticker_symbol}. O símbolo pode estar deslistado ou inválido.")
         logger.error(f"Erro ao baixar dados do Yahoo Finance: {str(e)}")
         raise HTTPException(status_code=500, detail="Erro ao obter dados do Yahoo Finance. Verifique o símbolo ou a conectividade.")
 
