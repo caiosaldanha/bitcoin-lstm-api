@@ -28,44 +28,12 @@ RUN useradd --create-home --shell /bin/bash app
 
 COPY main.py .
 
-# Primeiro cria o diretório e copia o .keep
-COPY lstm_files/.keep lstm_files/
-
-# Agora copia explicitamente os arquivos modelo (se existirem)
+# Copiar arquivos modelo
 COPY lstm_files/ lstm_files/
-
-# Debug mais detalhado
-RUN echo "=== DIAGNÓSTICO COMPLETO APÓS COPY ===" && \
-    echo "PWD: $(pwd)" && \
-    echo "Conteúdo do diretório atual:" && \
-    ls -la && \
-    echo "=== Conteúdo do diretório lstm_files ===" && \
-    ls -la lstm_files/ && \
-    echo "=== Verificando arquivos .joblib ===" && \
-    find lstm_files/ -name "*.joblib" -exec ls -lh {} \; || echo "Nenhum arquivo .joblib encontrado" && \
-    echo "=== Verificando tamanhos específicos ===" && \
-    (test -f lstm_files/lstm_model.joblib && echo "lstm_model.joblib: $(ls -lh lstm_files/lstm_model.joblib)" || echo "lstm_model.joblib: NÃO ENCONTRADO") && \
-    (test -f lstm_files/scaler.joblib && echo "scaler.joblib: $(ls -lh lstm_files/scaler.joblib)" || echo "scaler.joblib: NÃO ENCONTRADO") && \
-    echo "=== FIM DO DIAGNÓSTICO ==="
 
 # Garantir permissões corretas e ownership
 RUN chmod -R 755 lstm_files && \
     chown -R app:app /app
-
-# Debug final APÓS mudança de ownership
-RUN echo "=== VERIFICAÇÃO FINAL APÓS CHOWN ===" && \
-    ls -la lstm_files/ && \
-    echo "=== PERMISSÕES DOS ARQUIVOS ===" && \
-    find lstm_files/ -name "*.joblib" -exec ls -lh {} \; || echo "Nenhum arquivo .joblib encontrado após chown" && \
-    echo "=== FIM VERIFICAÇÃO FINAL ==="
-
-# Avisar sobre status dos arquivos mas não falhar o build
-RUN if [ ! -f lstm_files/lstm_model.joblib ]; then \
-        echo "AVISO: lstm_model.joblib não encontrado - API funcionará em modo diagnóstico"; \
-    fi && \
-    if [ ! -f lstm_files/scaler.joblib ]; then \
-        echo "AVISO: scaler.joblib não encontrado - API funcionará em modo diagnóstico"; \
-    fi
 
 # Mudar para usuário não-root APENAS no final
 USER app
