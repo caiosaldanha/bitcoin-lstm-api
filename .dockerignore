@@ -41,3 +41,6 @@ ENV/
 # Ignore temporary files
 *.tmp
 *.temp
+
+# IMPORTANT: DO NOT ignore .joblib files - they are needed for the model
+# *.joblib <- COMMENTED OUT to ensure model files are included

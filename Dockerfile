@@ -24,14 +24,26 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 COPY main.py .
-COPY lstm_files lstm_files
 
-# Debug: List contents of lstm_files to verify copy
-RUN echo "=== Conteúdo do diretório lstm_files após COPY ===" && \
+# Primeiro cria o diretório e copia o .keep
+COPY lstm_files/.keep lstm_files/
+
+# Agora copia explicitamente os arquivos modelo (se existirem)
+COPY lstm_files/ lstm_files/
+
+# Debug mais detalhado
+RUN echo "=== DIAGNÓSTICO COMPLETO APÓS COPY ===" && \
+    echo "PWD: $(pwd)" && \
+    echo "Conteúdo do diretório atual:" && \
+    ls -la && \
+    echo "=== Conteúdo do diretório lstm_files ===" && \
     ls -la lstm_files/ && \
-    echo "=== Verificando tamanhos dos arquivos ===" && \
-    find lstm_files/ -name "*.joblib" -exec ls -lh {} \; && \
-    echo "=== Fim da verificação ==="
+    echo "=== Verificando arquivos .joblib ===" && \
+    find lstm_files/ -name "*.joblib" -exec ls -lh {} \; || echo "Nenhum arquivo .joblib encontrado" && \
+    echo "=== Verificando tamanhos específicos ===" && \
+    (test -f lstm_files/lstm_model.joblib && echo "lstm_model.joblib: $(ls -lh lstm_files/lstm_model.joblib)" || echo "lstm_model.joblib: NÃO ENCONTRADO") && \
+    (test -f lstm_files/scaler.joblib && echo "scaler.joblib: $(ls -lh lstm_files/scaler.joblib)" || echo "scaler.joblib: NÃO ENCONTRADO") && \
+    echo "=== FIM DO DIAGNÓSTICO ==="
 
 # Garantir permissões corretas (remover teste que falha o build)
 RUN chmod -R 755 lstm_files
