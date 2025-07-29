@@ -23,12 +23,11 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copiar código da aplicação
 COPY main.py .
-
-# Criar diretório para modelos com permissões corretas
-RUN mkdir -p lstm_files && \
-    chmod 755 lstm_files
+# Copiar diretório de modelos e arquivos
+COPY lstm_files/ lstm_files/
+# Garantir permissões corretas
+RUN chmod -R 755 lstm_files
 
 # Criar usuário não-root para segurança
 RUN useradd --create-home --shell /bin/bash app && \
