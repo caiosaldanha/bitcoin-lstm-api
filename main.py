@@ -13,46 +13,114 @@ from pydantic import BaseModel
 from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 from fastapi.responses import Response
 
+def create_compatible_model(sequence_length=40):
+    """Cria um modelo LSTM compatível com diferentes versões do Keras"""
+    import tensorflow as tf
+    import os
+    import json
+    
+    # Tenta carregar configuração salva
+    config_path = 'lstm_files/model_config.json'
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+            sequence_length = config.get('sequence_length', sequence_length)
+            print(f"✅ Usando configuração salva: sequence_length={sequence_length}")
+        except Exception as e:
+            print(f"⚠️ Erro ao carregar configuração: {e}. Usando padrão.")
+    
+    model = tf.keras.Sequential([
+        tf.keras.layers.LSTM(50, return_sequences=True, input_shape=(sequence_length, 1),
+                           kernel_initializer='glorot_uniform',
+                           recurrent_initializer='orthogonal'),
+        tf.keras.layers.Dropout(0.2),
+        tf.keras.layers.LSTM(50, return_sequences=True,
+                           kernel_initializer='glorot_uniform',
+                           recurrent_initializer='orthogonal'),
+        tf.keras.layers.Dropout(0.2),
+        tf.keras.layers.LSTM(50,
+                           kernel_initializer='glorot_uniform',
+                           recurrent_initializer='orthogonal'),
+        tf.keras.layers.Dropout(0.2),
+        tf.keras.layers.Dense(1, kernel_initializer='glorot_uniform')
+    ])
+    
+    model.compile(optimizer='adam', loss='mean_squared_error')
+    return model
+
+
 # Função para carregar modelo com compatibilidade de versões
 def load_model_safely(model_path):
-    """Carrega o modelo de forma segura, priorizando formato .keras"""
+    """Carrega o modelo de forma segura, priorizando formato .keras com fallbacks robustos"""
     import os
     import tensorflow as tf
     
-    try:
-        # Prioridade 1: Carregar modelo no formato .keras (recomendado)
-        if model_path.endswith('.keras') and os.path.exists(model_path):
-            print(f"✅ Carregando modelo Keras nativo: {model_path}")
-            return tf.keras.models.load_model(model_path)
-        
-        # Prioridade 2: Se passou .joblib, procura .keras primeiro
-        if model_path.endswith('.joblib'):
-            keras_path = model_path.replace('.joblib', '.keras')
-            if os.path.exists(keras_path):
-                print(f"✅ Encontrado modelo .keras, usando: {keras_path}")
-                return tf.keras.models.load_model(keras_path)
+    # Lista de possíveis caminhos na ordem de prioridade
+    keras_path = model_path.replace('.joblib', '.keras').replace('.h5', '.keras')
+    h5_path = model_path.replace('.joblib', '.h5').replace('.keras', '.h5')
+    joblib_path = model_path.replace('.keras', '.joblib').replace('.h5', '.joblib')
+    
+    # Tentativa 1: Carregar modelo .keras (prioridade)
+    if os.path.exists(keras_path):
+        try:
+            print(f"✅ Tentando carregar modelo Keras nativo: {keras_path}")
+            # Usa custom_objects para resolver problemas de compatibilidade
+            model = tf.keras.models.load_model(keras_path, compile=False)
+            # Recompila o modelo para garantir compatibilidade
+            model.compile(optimizer='adam', loss='mean_squared_error')
+            print(f"✅ Modelo .keras carregado com sucesso!")
+            return model
+        except Exception as e:
+            print(f"⚠️ Erro ao carregar modelo .keras: {e}")
+            print("⚠️ Tentando carregar pesos em modelo recriado...")
             
-            h5_path = model_path.replace('.joblib', '.h5')
-            if os.path.exists(h5_path):
-                print(f"✅ Encontrado modelo .h5, usando: {h5_path}")
-                return tf.keras.models.load_model(h5_path)
-        
-        # Prioridade 3: Carregar arquivo H5 se especificado
-        if model_path.endswith('.h5') and os.path.exists(model_path):
-            print(f"✅ Carregando modelo H5: {model_path}")
-            return tf.keras.models.load_model(model_path)
-        
-        # Último recurso: Tentar joblib (não recomendado)
-        if model_path.endswith('.joblib') and os.path.exists(model_path):
-            print(f"⚠️ Tentando carregar modelo joblib (não recomendado): {model_path}")
+            # Tenta recriar o modelo e carregar apenas os pesos
+            try:
+                new_model = create_compatible_model()
+                # Tenta carregar apenas os pesos se o modelo completo falhar
+                weights_path = keras_path.replace('.keras', '_weights.h5')
+                if os.path.exists(weights_path):
+                    new_model.load_weights(weights_path)
+                    print(f"✅ Pesos carregados em modelo recriado!")
+                    return new_model
+                else:
+                    # Se não tem arquivo de pesos separado, tenta carregar do .h5
+                    print("⚠️ Tentando formatos alternativos...")
+            except Exception as e2:
+                print(f"⚠️ Falha ao recriar modelo: {e2}")
+    
+    # Tentativa 2: Carregar modelo .h5
+    if os.path.exists(h5_path):
+        try:
+            print(f"✅ Tentando carregar modelo H5: {h5_path}")
+            model = tf.keras.models.load_model(h5_path, compile=False)
+            model.compile(optimizer='adam', loss='mean_squared_error')
+            print(f"✅ Modelo .h5 carregado com sucesso!")
+            return model
+        except Exception as e:
+            print(f"⚠️ Erro ao carregar modelo .h5: {e}")
+    
+    # Tentativa 3: Carregar modelo .joblib (último recurso)
+    if os.path.exists(joblib_path):
+        try:
+            print(f"⚠️ Tentando carregar modelo joblib: {joblib_path}")
             import joblib
-            return joblib.load(model_path)
-        
-        raise FileNotFoundError(f"❌ Modelo não encontrado: {model_path}")
-        
-    except Exception as e:
-        print(f"❌ Erro ao carregar modelo {model_path}: {e}")
-        raise
+            model = joblib.load(joblib_path)
+            print(f"✅ Modelo .joblib carregado (compatibilidade limitada)")
+            return model
+        except Exception as e:
+            print(f"❌ Erro ao carregar modelo .joblib: {e}")
+    
+    # Se chegou aqui, nenhum formato funcionou
+    available_files = []
+    base_dir = os.path.dirname(keras_path) if os.path.dirname(keras_path) else 'lstm_files'
+    if os.path.exists(base_dir):
+        available_files = [f for f in os.listdir(base_dir) if f.startswith('lstm_model')]
+    
+    raise FileNotFoundError(f"❌ Não foi possível carregar modelo em nenhum formato. "
+                          f"Arquivos disponíveis: {available_files}. "
+                          f"Considere retreinar o modelo.")
 
 
 def create_sequences(data, seq_length):
@@ -142,13 +210,19 @@ def train_bitcoin_lstm_internal():
         # 3. Construir modelo
         print("🏗️ Construindo modelo LSTM...")
         model = tf.keras.Sequential([
-            tf.keras.layers.LSTM(50, return_sequences=True, input_shape=(sequence_length, 1)),
+            tf.keras.layers.LSTM(50, return_sequences=True, input_shape=(sequence_length, 1),
+                               kernel_initializer='glorot_uniform',  # Mais compatível
+                               recurrent_initializer='orthogonal'),
             tf.keras.layers.Dropout(0.2),
-            tf.keras.layers.LSTM(50, return_sequences=True),
+            tf.keras.layers.LSTM(50, return_sequences=True,
+                               kernel_initializer='glorot_uniform',
+                               recurrent_initializer='orthogonal'),
             tf.keras.layers.Dropout(0.2),
-            tf.keras.layers.LSTM(50),
+            tf.keras.layers.LSTM(50,
+                               kernel_initializer='glorot_uniform',
+                               recurrent_initializer='orthogonal'),
             tf.keras.layers.Dropout(0.2),
-            tf.keras.layers.Dense(1)
+            tf.keras.layers.Dense(1, kernel_initializer='glorot_uniform')
         ])
         
         model.compile(optimizer='adam', loss='mean_squared_error')
@@ -209,8 +283,25 @@ def train_bitcoin_lstm_internal():
         os.makedirs('lstm_files', exist_ok=True)
         
         # Salvar modelo no formato Keras nativo (CORRETO)
-        model.save('lstm_files/lstm_model.keras')
-        model.save('lstm_files/lstm_model.h5')  # Formato alternativo
+        try:
+            model.save('lstm_files/lstm_model.keras')
+            print("✅ Modelo salvo em formato .keras")
+        except Exception as e:
+            print(f"⚠️ Erro ao salvar .keras: {e}")
+        
+        # Salvar também em H5 (formato mais compatível)
+        try:
+            model.save('lstm_files/lstm_model.h5')
+            print("✅ Modelo salvo em formato .h5")
+        except Exception as e:
+            print(f"⚠️ Erro ao salvar .h5: {e}")
+        
+        # Salvar apenas os pesos (para fallback)
+        try:
+            model.save_weights('lstm_files/lstm_model_weights.h5')
+            print("✅ Pesos do modelo salvos separadamente")
+        except Exception as e:
+            print(f"⚠️ Erro ao salvar pesos: {e}")
         
         # Também salva em joblib para compatibilidade (pode não funcionar, mas tenta)
         try:
@@ -221,6 +312,26 @@ def train_bitcoin_lstm_internal():
         
         # Salvar scaler
         joblib.dump(scaler, 'lstm_files/scaler.joblib')
+        
+        # Salvar configuração do modelo para recriação
+        model_config = {
+            'sequence_length': sequence_length,
+            'architecture': 'LSTM-3layers-50units',
+            'optimizer': 'adam',
+            'loss': 'mean_squared_error',
+            'layers': [
+                {'type': 'LSTM', 'units': 50, 'return_sequences': True},
+                {'type': 'Dropout', 'rate': 0.2},
+                {'type': 'LSTM', 'units': 50, 'return_sequences': True},
+                {'type': 'Dropout', 'rate': 0.2},
+                {'type': 'LSTM', 'units': 50},
+                {'type': 'Dropout', 'rate': 0.2},
+                {'type': 'Dense', 'units': 1}
+            ]
+        }
+        
+        with open('lstm_files/model_config.json', 'w') as f:
+            json.dump(model_config, f, indent=2)
         
         # Salvar métricas
         metrics = {
@@ -241,7 +352,9 @@ def train_bitcoin_lstm_internal():
         print("✅ Modelo salvo em:")
         print("   - lstm_files/lstm_model.keras (FORMATO RECOMENDADO)")
         print("   - lstm_files/lstm_model.h5 (formato alternativo)")
+        print("   - lstm_files/lstm_model_weights.h5 (apenas pesos)")
         print("   - lstm_files/scaler.joblib")
+        print("   - lstm_files/model_config.json (configuração)")
         print("   - lstm_files/training_metrics.json")
         
         return {
