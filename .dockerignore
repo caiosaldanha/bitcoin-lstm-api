@@ -1,0 +1,47 @@
+# Ignore notebook file
+*.ipynb
+
+# Ignore test files
+test_*.py
+
+# Ignore setup scripts
+setup.sh
+setup.bat
+
+# Ignore git
+.git
+.gitignore
+
+# Ignore IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
+
+# Ignore Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Ignore virtual environments
+venv/
+env/
+ENV/
+
+# Ignore logs
+*.log
+
+# Ignore temporary files
+*.tmp
+*.temp
+
+# Keep lstm_files structure but ignore contents
+lstm_files/*.joblib
+lstm_files/*.json
