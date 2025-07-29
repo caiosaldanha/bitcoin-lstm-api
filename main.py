@@ -9,6 +9,7 @@ import datetime
 import numpy as np
 import yfinance as yf
 import time
+import traceback
 from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 from fastapi.responses import Response
 
@@ -130,7 +131,8 @@ async def predict_next_day():
 
     except Exception as e:
         ERROR_COUNT.labels(endpoint="/predict").inc()
-        raise HTTPException(status_code=500, detail=f"Erro na predição: {str(e)}")
+        tb = traceback.format_exc()
+        raise HTTPException(status_code=500, detail=f"Erro na predição: {str(e)}\nTraceback:\n{tb}")
 
 @app.get("/model-info")
 async def model_info():
