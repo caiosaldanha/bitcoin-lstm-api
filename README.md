@@ -29,7 +29,7 @@ Este projeto implementa uma API REST completa para predição de preços de Bitc
 ### Características Principais
 
 - **🤖 Modelo LSTM**: Rede neural recorrente para séries temporais
-- **📊 Dados em Tempo Real**: Integração com Yahoo Finance
+- **📊 Dados em Tempo Real**: Integração com Yahoo Finance com cache local e fallback para Stooq
 - **🔍 Monitoramento**: Prometheus + Grafana para observabilidade
 - **🐳 Containerização**: Deploy completo com Docker Compose
 - **📈 Métricas**: Avaliação detalhada do modelo (RMSE, MAE, R²)
