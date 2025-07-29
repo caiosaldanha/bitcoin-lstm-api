@@ -1,3 +1,48 @@
+from typing import Dict
+# Rota para checagem detalhada dos arquivos do modelo
+@app.get("/model-check")
+async def model_check() -> Dict:
+    """Verifica a existência dos arquivos do modelo e retorna logs detalhados"""
+    logs = []
+    model_path = 'lstm_files/lstm_model.joblib'
+    scaler_path = 'lstm_files/scaler.joblib'
+    result = {
+        "model_exists": False,
+        "scaler_exists": False,
+        "model_path": model_path,
+        "scaler_path": scaler_path,
+        "details": []
+    }
+    try:
+        if os.path.exists(model_path):
+            result["model_exists"] = True
+            logs.append(f"Arquivo encontrado: {model_path}")
+        else:
+            logs.append(f"Arquivo NÃO encontrado: {model_path}")
+
+        if os.path.exists(scaler_path):
+            result["scaler_exists"] = True
+            logs.append(f"Arquivo encontrado: {scaler_path}")
+        else:
+            logs.append(f"Arquivo NÃO encontrado: {scaler_path}")
+
+        # Tenta carregar os arquivos se existirem
+        if result["model_exists"]:
+            try:
+                _ = joblib.load(model_path)
+                logs.append(f"joblib.load OK para {model_path}")
+            except Exception as e:
+                logs.append(f"Erro ao carregar {model_path}: {str(e)}")
+        if result["scaler_exists"]:
+            try:
+                _ = joblib.load(scaler_path)
+                logs.append(f"joblib.load OK para {scaler_path}")
+            except Exception as e:
+                logs.append(f"Erro ao carregar {scaler_path}: {str(e)}")
+    except Exception as e:
+        logs.append(f"Erro geral na checagem: {str(e)}")
+    result["details"] = logs
+    return result
 
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
