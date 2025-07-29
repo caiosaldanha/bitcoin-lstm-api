@@ -205,28 +205,26 @@ async def train_model():
         ticker_symbol = "BTC-USD"
         start_date = "2018-01-01"
         end_date = datetime.date.today().strftime("%Y-%m-%d")
-        try:
-            data = yf.download(ticker_symbol, start=start_date, end=end_date)
-        except Exception as e:
-            if "No timezone found" in str(e):
-                logger.error(f"Erro de fuso horário ao baixar dados para {ticker_symbol}: {str(e)}")
-                raise HTTPException(status_code=400, detail="Símbolo pode estar deslistado ou indisponível no Yahoo Finance.")
-            logger.error(f"Erro ao baixar dados do Yahoo Finance: {str(e)}")
-            raise HTTPException(status_code=500, detail="Erro ao obter dados do Yahoo Finance. Verifique o símbolo ou a conectividade.")
+        
+        data = yf.download(ticker_symbol, start=start_date, end=end_date)
+
         # Verificações robustas como no notebook
         if data is None or data.empty:
             raise HTTPException(status_code=400, detail="Nenhum dado retornado para o período especificado. O símbolo pode estar deslistado ou inválido.")
         if 'Close' not in data.columns or data['Close'].isnull().all():
             raise HTTPException(status_code=400, detail="Dados insuficientes ou ausentes para o período especificado.")
+        
         close_prices = data['Close'].values
         if len(close_prices) == 0:
             raise HTTPException(status_code=400, detail="Dados insuficientes para treinamento.")
+        
         close_prices = close_prices.reshape(-1, 1)
         scaler = MinMaxScaler(feature_range=(0, 1))
         scaled_data = scaler.fit_transform(close_prices)
         training_data_len = int(np.ceil(len(scaled_data) * 0.8))
         train_data = scaled_data[:training_data_len]
         test_data = scaled_data[training_data_len - 40:]
+        
         # Criação dos dados de treino
         x_train, y_train = [], []
         for i in range(40, len(train_data)):
@@ -234,25 +232,20 @@ async def train_model():
             y_train.append(train_data[i, 0])
         x_train, y_train = np.array(x_train), np.array(y_train)
         x_train = np.reshape(x_train, (x_train.shape[0], x_train.shape[1], 1))
+        
         # Construção do modelo
-        model = Sequential()
-        model.add(LSTM(units=50, return_sequences=True, input_shape=(x_train.shape[1], 1)))
-        model.add(LSTM(units=50, return_sequences=False))
-        model.add(Dense(units=25))
-        model.add(Dense(units=1))
-        model.compile(optimizer='adam', loss='mean_squared_error')
+        model = build_lstm_model((x_train.shape[1], 1))
+        
         # Treinamento
         history = model.fit(x_train, y_train, validation_split=0.2, batch_size=1, epochs=10, verbose=0)
+        
         # Criação dos dados de teste
-        x_test = []
-        y_test = close_prices[training_data_len:]
-        for i in range(40, len(test_data)):
-            x_test.append(test_data[i-40:i, 0])
-        x_test = np.array(x_test)
-        x_test = np.reshape(x_test, (x_test.shape[0], x_test.shape[1], 1))
+        x_test, y_test = create_test_data(test_data, close_prices, training_data_len)
+        
         # Predição
         predictions = model.predict(x_test, verbose=0)
         predictions = scaler.inverse_transform(predictions)
+        
         # Avaliação
         from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
         valid_data = data[training_data_len:].copy()
@@ -264,11 +257,13 @@ async def train_model():
         mae = mean_absolute_error(y_test_actual, predictions_adjusted)
         r2 = r2_score(y_test_actual, predictions_adjusted)
         training_duration = time.time() - start_time
+        
         # Salvar modelo e scaler
         if not os.path.exists('lstm_files'):
             os.makedirs('lstm_files')
         joblib.dump(model, 'lstm_files/lstm_model.joblib')
         joblib.dump(scaler, 'lstm_files/scaler.joblib')
+        
         # Armazenar métricas no cache
         training_metrics_cache.update({
             'training_date': datetime.datetime.now().isoformat(),
@@ -282,6 +277,7 @@ async def train_model():
             json.dump(training_metrics_cache, f, indent=2)
         MODEL_TRAINING_TIME.observe(training_duration)
         MODEL_ACCURACY_GAUGE.set(r2)
+        
         return TrainingResponse(
             message="Modelo treinado e salvo com sucesso!",
             rmse=float(rmse),
@@ -289,7 +285,14 @@ async def train_model():
             r2=float(r2),
             model_saved=True
         )
+    except HTTPException:
+        raise  # Re-lança a exceção HTTP para que o FastAPI a manipule
     except Exception as e:
+        if "No timezone found" in str(e):
+            logger.error(f"Erro de fuso horário ao baixar dados para {ticker_symbol}: {str(e)}")
+            raise HTTPException(status_code=400, detail="Símbolo pode estar deslistado ou indisponível no Yahoo Finance.")
+        
+        logger.error(f"Erro inesperado no treinamento: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro no treinamento: {str(e)}")
 
 @app.get("/predict", response_model=PredictionResponse)
