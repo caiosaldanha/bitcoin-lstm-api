@@ -713,9 +713,7 @@ Este projeto está licenciado sob a MIT License - veja o arquivo [LICENSE](LICEN
 
 ## 📞 Suporte
 
-- **Issues**: [GitHub Issues](https://github.com/seu-usuario/bitcoin-lstm-predictor/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/seu-usuario/bitcoin-lstm-predictor/discussions)
-- **Email**: seu-email@exemplo.com
+- **Email**: hello@caiosaldanha.com
 
 ---
 
