@@ -93,41 +93,66 @@ async def model_check() -> Dict:
     logs = []
     model_path = 'lstm_files/lstm_model.joblib'
     scaler_path = 'lstm_files/scaler.joblib'
+    
+    # Adiciona informações de diagnóstico
+    logs.append(f"Diretório de trabalho atual: {os.getcwd()}")
+    logs.append(f"Diretório lstm_files existe: {os.path.exists('lstm_files')}")
+    
+    # Lista conteúdo do diretório se existir
+    if os.path.exists('lstm_files'):
+        try:
+            files_in_dir = os.listdir('lstm_files')
+            logs.append(f"Arquivos em lstm_files: {files_in_dir}")
+        except Exception as e:
+            logs.append(f"Erro ao listar lstm_files: {str(e)}")
+    
     result = {
         "model_exists": False,
         "scaler_exists": False,
-        "model_path": model_path,
-        "scaler_path": scaler_path,
+        "model_path": os.path.abspath(model_path),
+        "scaler_path": os.path.abspath(scaler_path),
+        "working_directory": os.getcwd(),
         "details": []
     }
+    
     try:
         if os.path.exists(model_path):
             result["model_exists"] = True
-            logs.append(f"Arquivo encontrado: {model_path}")
+            file_size = os.path.getsize(model_path)
+            logs.append(f"Arquivo encontrado: {model_path} (tamanho: {file_size} bytes)")
         else:
             logs.append(f"Arquivo NÃO encontrado: {model_path}")
+            logs.append(f"Caminho absoluto: {os.path.abspath(model_path)}")
 
         if os.path.exists(scaler_path):
             result["scaler_exists"] = True
-            logs.append(f"Arquivo encontrado: {scaler_path}")
+            file_size = os.path.getsize(scaler_path)
+            logs.append(f"Arquivo encontrado: {scaler_path} (tamanho: {file_size} bytes)")
         else:
             logs.append(f"Arquivo NÃO encontrado: {scaler_path}")
+            logs.append(f"Caminho absoluto: {os.path.abspath(scaler_path)}")
 
         # Tenta carregar os arquivos se existirem
         if result["model_exists"]:
             try:
-                _ = joblib.load(model_path)
+                model = joblib.load(model_path)
                 logs.append(f"joblib.load OK para {model_path}")
+                logs.append(f"Tipo do modelo: {type(model)}")
             except Exception as e:
                 logs.append(f"Erro ao carregar {model_path}: {str(e)}")
+                
         if result["scaler_exists"]:
             try:
-                _ = joblib.load(scaler_path)
+                scaler = joblib.load(scaler_path)
                 logs.append(f"joblib.load OK para {scaler_path}")
+                logs.append(f"Tipo do scaler: {type(scaler)}")
             except Exception as e:
                 logs.append(f"Erro ao carregar {scaler_path}: {str(e)}")
+                
     except Exception as e:
         logs.append(f"Erro geral na checagem: {str(e)}")
+        logs.append(f"Traceback: {traceback.format_exc()}")
+        
     result["details"] = logs
     return result
 
