@@ -7,11 +7,61 @@ import time
 import traceback
 import json
 from typing import Dict
+import pandas as pd
 
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 from fastapi.responses import Response
+
+
+def fetch_bitcoin_data(start_date: str, end_date: str, cache_hours: int = 12):
+    """Baixa dados do Bitcoin com cache e fonte alternativa."""
+    cache_dir = "data"
+    os.makedirs(cache_dir, exist_ok=True)
+    cache_file = os.path.join(cache_dir, f"btc_{start_date}_{end_date}.csv")
+
+    # Verifica cache existente e recente
+    if os.path.exists(cache_file):
+        mtime = datetime.datetime.fromtimestamp(os.path.getmtime(cache_file))
+        if datetime.datetime.now() - mtime < datetime.timedelta(hours=cache_hours):
+            try:
+                return pd.read_csv(cache_file, index_col=0, parse_dates=True)
+            except Exception as e:
+                print(f"⚠️ Falha ao ler cache {cache_file}: {e}")
+
+    # Tentativa principal com yfinance
+    try:
+        data = yf.download(
+            "BTC-USD",
+            start=start_date,
+            end=end_date,
+            progress=False,
+            show_errors=False,
+            threads=True,
+        )
+        if data is not None and len(data) > 0:
+            data.to_csv(cache_file)
+            return data
+    except Exception as e:
+        print(f"⚠️ Erro ao baixar com yfinance: {e}")
+
+    # Fonte alternativa: Stooq
+    try:
+        url = "https://stooq.com/q/d/l/?s=btcusd&i=d"
+        alt = pd.read_csv(url)
+        alt.columns = ["Date", "Open", "High", "Low", "Close"]
+        alt["Date"] = pd.to_datetime(alt["Date"])
+        alt.set_index("Date", inplace=True)
+        data = alt.loc[start_date:end_date]
+        if len(data) > 0:
+            data.to_csv(cache_file)
+            return data
+    except Exception as e:
+        print(f"❌ Erro ao baixar dados da Stooq: {e}")
+
+    return None
+
 
 def create_compatible_model(sequence_length=40):
     """Cria um modelo LSTM compatível com diferentes versões do Keras"""
@@ -143,58 +193,26 @@ def train_bitcoin_lstm_internal():
         
         # 1. Baixar dados do Bitcoin
         print("📊 Baixando dados do Bitcoin...")
-        ticker_symbol = "BTC-USD"
         end_date = datetime.date.today()
-        
+
         # Tenta diferentes períodos de dados em ordem decrescente
         periods_to_try = [2000, 1000, 500, 365, 180, 90]
         data = None
-        
+
         for days in periods_to_try:
-            try:
-                start_date = end_date - datetime.timedelta(days=days)
-                print(f"Tentando baixar {days} dias de dados de {start_date} até {end_date}")
-                
-                # Tenta com diferentes configurações do yfinance
-                data = yf.download(
-                    ticker_symbol, 
-                    start=start_date.strftime("%Y-%m-%d"), 
-                    end=end_date.strftime("%Y-%m-%d"),
-                    progress=False,
-                    show_errors=False,
-                    threads=True
-                )
-                
-                if data is not None and len(data) > 0:
-                    print(f"✅ Sucesso! Baixados {len(data)} registros com {days} dias")
-                    break
-                else:
-                    print(f"⚠️ Falha com {days} dias - dados vazios")
-                    
-            except Exception as e:
-                print(f"⚠️ Erro ao baixar {days} dias: {str(e)}")
-                continue
+            start_date = end_date - datetime.timedelta(days=days)
+            print(f"Tentando baixar {days} dias de dados de {start_date} até {end_date}")
+            data = fetch_bitcoin_data(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"))
+
+            if data is not None and len(data) > 0:
+                print(f"✅ Sucesso! Baixados {len(data)} registros com {days} dias")
+                break
+            else:
+                print(f"⚠️ Falha com {days} dias - dados vazios ou erro na fonte")
         
-        # Se ainda não conseguiu dados, tenta métodos alternativos
+        # Se ainda não conseguiu dados depois das tentativas
         if data is None or len(data) == 0:
-            print("⚠️ Falha com yfinance, tentando métodos alternativos...")
-            
-            # Método alternativo 1: Forçar download com período menor
-            try:
-                end_date_str = datetime.date.today().strftime("%Y-%m-%d")
-                start_date_str = (datetime.date.today() - datetime.timedelta(days=30)).strftime("%Y-%m-%d")
-                
-                import yfinance as yf
-                ticker = yf.Ticker("BTC-USD")
-                data = ticker.history(start=start_date_str, end=end_date_str)
-                
-                if data is not None and len(data) > 0:
-                    print(f"✅ Método alternativo funcionou! {len(data)} registros")
-                else:
-                    print("❌ Método alternativo também falhou")
-                    
-            except Exception as e:
-                print(f"❌ Erro no método alternativo: {e}")
+            print("⚠️ Falha ao obter dados de fontes externas")
         
         # Se ainda não tem dados, gera dados sintéticos para demonstração
         if data is None or len(data) == 0:
@@ -631,11 +649,10 @@ async def predict_next_day():
         model = load_model_safely('lstm_files/lstm_model.keras')
         scaler = joblib.load('lstm_files/scaler.joblib')
 
-        ticker_symbol = "BTC-USD"
         end_date = datetime.date.today().strftime("%Y-%m-%d")
         start_date = (datetime.date.today() - datetime.timedelta(days=100)).strftime("%Y-%m-%d")
 
-        data = yf.download(ticker_symbol, start=start_date, end=end_date)
+        data = fetch_bitcoin_data(start_date, end_date, cache_hours=1)
 
         if len(data) < 40:
             ERROR_COUNT.labels(endpoint="/predict").inc()
