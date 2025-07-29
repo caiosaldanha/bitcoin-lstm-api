@@ -201,11 +201,18 @@ async def train_model():
     start_time = time.time()
     
     try:
-        # Aquisição dos dados
+        # Aquisição dos dados com tratamento de exceção
         ticker_symbol = "BTC-USD"
         start_date = "2018-01-01"
         end_date = datetime.date.today().strftime("%Y-%m-%d")
-        data = yf.download(ticker_symbol, start=start_date, end=end_date)
+        try:
+            data = yf.download(ticker_symbol, start=start_date, end=end_date)
+        except Exception as e:
+            if "No timezone found" in str(e):
+                logger.error(f"Erro de fuso horário ao baixar dados para {ticker_symbol}: {str(e)}")
+                raise HTTPException(status_code=400, detail="Símbolo pode estar deslistado ou indisponível no Yahoo Finance.")
+            logger.error(f"Erro ao baixar dados do Yahoo Finance: {str(e)}")
+            raise HTTPException(status_code=500, detail="Erro ao obter dados do Yahoo Finance. Verifique o símbolo ou a conectividade.")
         # Verificações robustas como no notebook
         if data is None or data.empty:
             raise HTTPException(status_code=400, detail="Nenhum dado retornado para o período especificado. O símbolo pode estar deslistado ou inválido.")
