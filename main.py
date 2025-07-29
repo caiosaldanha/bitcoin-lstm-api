@@ -108,9 +108,14 @@ def prepare_data():
     end_date = datetime.date.today().strftime("%Y-%m-%d")
 
     # Obter dados do Yahoo Finance
-    data = yf.download(ticker_symbol, start=start_date, end=end_date)
+    try:
+        data = yf.download(ticker_symbol, start=start_date, end=end_date)
+    except Exception as e:
+        logger.error(f"Erro ao baixar dados do Yahoo Finance: {str(e)}")
+        raise HTTPException(status_code=500, detail="Erro ao obter dados do Yahoo Finance. Verifique o símbolo ou a conectividade.")
+
     if data.empty:
-        raise HTTPException(status_code=400, detail="Nenhum dado retornado para o período especificado.")
+        raise HTTPException(status_code=400, detail="Nenhum dado retornado para o período especificado. O símbolo pode estar deslistado ou inválido.")
 
     # Selecionar os preços de fechamento
     close_prices = data['Close'].values
