@@ -130,6 +130,10 @@ def prepare_data():
     train_data = scaled_data[:training_data_len]
     test_data = scaled_data[training_data_len - 40:]
 
+    # Verificar se os preços de fechamento estão disponíveis
+    if 'Close' not in data.columns or data['Close'].isnull().all():
+        raise HTTPException(status_code=400, detail="Dados insuficientes ou ausentes para o período especificado.")
+
     return data, close_prices, scaler, scaled_data, train_data, test_data, training_data_len
 
 def create_training_data(train_data):
