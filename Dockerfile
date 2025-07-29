@@ -25,8 +25,11 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 COPY main.py .
 COPY lstm_files lstm_files
-# Garantir permissões corretas
-RUN chmod -R 755 lstm_files
+
+# Garantir permissões corretas e checar arquivos obrigatórios
+RUN chmod -R 755 lstm_files && \
+    test -f lstm_files/lstm_model.joblib && \
+    test -f lstm_files/scaler.joblib || (echo "ERRO: lstm_model.joblib ou scaler.joblib não encontrados em lstm_files. Adicione os arquivos antes do build." && exit 1)
 
 # Criar usuário não-root para segurança
 RUN useradd --create-home --shell /bin/bash app && \
