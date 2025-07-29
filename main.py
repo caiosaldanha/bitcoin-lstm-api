@@ -39,12 +39,7 @@ training_metrics_cache = {}
 
 app = FastAPI(title="Bitcoin LSTM Predictor", version="1.0.0")
 
-class TrainingResponse(BaseModel):
-    message: str
-    rmse: float
-    mae: float
-    r2: float
-    model_saved: bool
+
 
 class PredictionResponse(BaseModel):
     current_date: str
@@ -101,61 +96,9 @@ async def monitoring_middleware(request: Request, call_next):
     
     return response
 
-def prepare_data():
-    """Função para preparar os dados do Bitcoin"""
-    ticker_symbol = "BTC-USD"
-    start_date = "2018-01-01"
-    end_date = datetime.date.today().strftime("%Y-%m-%d")
 
-    # Obter dados do Yahoo Finance
-    try:
-        data = yf.download(ticker_symbol, start=start_date, end=end_date)
-    except Exception as e:
-        if "No timezone found" in str(e):
-            logger.error(f"Erro de fuso horário ao baixar dados para {ticker_symbol}: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Erro de fuso horário para o símbolo {ticker_symbol}. O símbolo pode estar deslistado ou inválido.")
-        logger.error(f"Erro ao baixar dados do Yahoo Finance: {str(e)}")
-        raise HTTPException(status_code=500, detail="Erro ao obter dados do Yahoo Finance. Verifique o símbolo ou a conectividade.")
 
-    if data.empty:
-        raise HTTPException(status_code=400, detail="Nenhum dado retornado para o período especificado. O símbolo pode estar deslistado ou inválido.")
 
-    # Selecionar os preços de fechamento
-    close_prices = data['Close'].values
-    if len(close_prices) == 0:
-        raise HTTPException(status_code=400, detail="Dados insuficientes para treinamento.")
-
-    close_prices = close_prices.reshape(-1, 1)
-
-    # Escalar os dados entre 0 e 1
-    scaler = MinMaxScaler(feature_range=(0, 1))
-    scaled_data = scaler.fit_transform(close_prices)
-
-    # Definir o tamanho dos dados de treino
-    training_data_len = int(np.ceil(len(scaled_data) * 0.8))
-
-    # Dividir os dados
-    train_data = scaled_data[:training_data_len]
-    test_data = scaled_data[training_data_len - 40:]
-
-    # Verificar se os preços de fechamento estão disponíveis
-    if 'Close' not in data.columns or data['Close'].isnull().all():
-        raise HTTPException(status_code=400, detail="Dados insuficientes ou ausentes para o período especificado.")
-
-    return data, close_prices, scaler, scaled_data, train_data, test_data, training_data_len
-
-def create_training_data(train_data):
-    """Criar dataset de treino"""
-    x_train, y_train = [], []
-    
-    for i in range(40, len(train_data)):
-        x_train.append(train_data[i-40:i, 0])
-        y_train.append(train_data[i, 0])
-    
-    x_train, y_train = np.array(x_train), np.array(y_train)
-    x_train = np.reshape(x_train, (x_train.shape[0], x_train.shape[1], 1))
-    
-    return x_train, y_train
 
 def create_test_data(test_data, close_prices, training_data_len):
     """Criar dataset de teste"""
@@ -170,16 +113,7 @@ def create_test_data(test_data, close_prices, training_data_len):
     
     return x_test, y_test
 
-def build_lstm_model(input_shape):
-    """Construir o modelo LSTM"""
-    model = Sequential()
-    model.add(LSTM(units=50, return_sequences=True, input_shape=input_shape))
-    model.add(LSTM(units=50, return_sequences=False))
-    model.add(Dense(units=25))
-    model.add(Dense(units=1))
-    
-    model.compile(optimizer='adam', loss='mean_squared_error')
-    return model
+
 
 @app.get("/")
 async def root():
@@ -195,105 +129,7 @@ async def root():
         ) else "needs_training"
     }
 
-@app.post("/train", response_model=TrainingResponse)
-async def train_model():
-    """Rota para treinar o modelo LSTM e salvar em formato joblib"""
-    start_time = time.time()
-    
-    try:
-        # Aquisição dos dados com tratamento de exceção
-        ticker_symbol = "BTC-USD"
-        start_date = "2018-01-01"
-        end_date = datetime.date.today().strftime("%Y-%m-%d")
-        
-        data = yf.download(ticker_symbol, start=start_date, end=end_date)
 
-        # Verificações robustas como no notebook
-        if data is None or data.empty:
-            raise HTTPException(status_code=400, detail="Nenhum dado retornado para o período especificado. O símbolo pode estar deslistado ou inválido.")
-        if 'Close' not in data.columns or data['Close'].isnull().all():
-            raise HTTPException(status_code=400, detail="Dados insuficientes ou ausentes para o período especificado.")
-        
-        close_prices = data['Close'].values
-        if len(close_prices) == 0:
-            raise HTTPException(status_code=400, detail="Dados insuficientes para treinamento.")
-        
-        close_prices = close_prices.reshape(-1, 1)
-        scaler = MinMaxScaler(feature_range=(0, 1))
-        scaled_data = scaler.fit_transform(close_prices)
-        training_data_len = int(np.ceil(len(scaled_data) * 0.8))
-        train_data = scaled_data[:training_data_len]
-        test_data = scaled_data[training_data_len - 40:]
-        
-        # Criação dos dados de treino
-        x_train, y_train = [], []
-        for i in range(40, len(train_data)):
-            x_train.append(train_data[i-40:i, 0])
-            y_train.append(train_data[i, 0])
-        x_train, y_train = np.array(x_train), np.array(y_train)
-        x_train = np.reshape(x_train, (x_train.shape[0], x_train.shape[1], 1))
-        
-        # Construção do modelo
-        model = build_lstm_model((x_train.shape[1], 1))
-        
-        # Treinamento
-        history = model.fit(x_train, y_train, validation_split=0.2, batch_size=1, epochs=10, verbose=0)
-        
-        # Criação dos dados de teste
-        x_test, y_test = create_test_data(test_data, close_prices, training_data_len)
-        
-        # Predição
-        predictions = model.predict(x_test, verbose=0)
-        predictions = scaler.inverse_transform(predictions)
-        
-        # Avaliação
-        from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-        valid_data = data[training_data_len:].copy()
-        y_test_actual = valid_data['Close'].values
-        min_len = min(len(y_test_actual), len(predictions))
-        y_test_actual = y_test_actual[:min_len]
-        predictions_adjusted = predictions[:min_len].flatten()
-        rmse = np.sqrt(mean_squared_error(y_test_actual, predictions_adjusted))
-        mae = mean_absolute_error(y_test_actual, predictions_adjusted)
-        r2 = r2_score(y_test_actual, predictions_adjusted)
-        training_duration = time.time() - start_time
-        
-        # Salvar modelo e scaler
-        if not os.path.exists('lstm_files'):
-            os.makedirs('lstm_files')
-        joblib.dump(model, 'lstm_files/lstm_model.joblib')
-        joblib.dump(scaler, 'lstm_files/scaler.joblib')
-        
-        # Armazenar métricas no cache
-        training_metrics_cache.update({
-            'training_date': datetime.datetime.now().isoformat(),
-            'rmse': float(rmse),
-            'mae': float(mae),
-            'r2': float(r2),
-            'training_duration': training_duration,
-            'data_points_used': len(close_prices)
-        })
-        with open('lstm_files/training_metrics.json', 'w') as f:
-            json.dump(training_metrics_cache, f, indent=2)
-        MODEL_TRAINING_TIME.observe(training_duration)
-        MODEL_ACCURACY_GAUGE.set(r2)
-        
-        return TrainingResponse(
-            message="Modelo treinado e salvo com sucesso!",
-            rmse=float(rmse),
-            mae=float(mae),
-            r2=float(r2),
-            model_saved=True
-        )
-    except HTTPException:
-        raise  # Re-lança a exceção HTTP para que o FastAPI a manipule
-    except Exception as e:
-        if "No timezone found" in str(e):
-            logger.error(f"Erro de fuso horário ao baixar dados para {ticker_symbol}: {str(e)}")
-            raise HTTPException(status_code=400, detail="Símbolo pode estar deslistado ou indisponível no Yahoo Finance.")
-        
-        logger.error(f"Erro inesperado no treinamento: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Erro no treinamento: {str(e)}")
 
 @app.get("/predict", response_model=PredictionResponse)
 async def predict_next_day():
