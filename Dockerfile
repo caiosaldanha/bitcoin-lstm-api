@@ -24,8 +24,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 COPY main.py .
-# Copiar diretório de modelos e arquivos
-COPY lstm_files/ lstm_files/
+COPY lstm_files lstm_files
 # Garantir permissões corretas
 RUN chmod -R 755 lstm_files
 
