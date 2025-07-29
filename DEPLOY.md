@@ -1,226 +1,219 @@
 # 🚀 Deploy no Dokploy - Bitcoin LSTM Predictor
 
-Este documento descreve como fazer o deploy da aplicação Bitcoin LSTM Predictor no Dokploy.
+Este documento descreve como fazer o deploy da aplicação Bitcoin LSTM Predictor no **Dokploy** com monitoramento completo.
 
 ## 📋 Pré-requisitos
 
 - Dokploy configurado em sua VPS
-- Traefik configurado com certificados SSL
+- Docker e Docker Compose instalados
 - Domínio configurado: `lstm.ml.caiosaldanha.com`
+- Repositório no GitHub
 
 ## 🔧 Configuração no Dokploy
 
-### 1. Criar Novo Projeto
+### 1. Conectar Repositório GitHub
 
 1. Acesse o painel do Dokploy
 2. Clique em "New Project"
 3. Nome: `bitcoin-lstm-predictor`
 4. Conecte seu repositório GitHub
+5. Branch: `main`
+6. Configure para deploy automático
 
-### 2. Configurar Variáveis de Ambiente
+### 2. Configuração de Deploy
 
-No painel do Dokploy, adicione as seguintes variáveis:
+#### Configurações Básicas:
+- **Build Context**: `./`
+- **Dockerfile**: `Dockerfile`
+- **Docker Compose File**: `docker-compose.yml`
+- **Port**: `8000`
+- **Health Check Path**: `/health`
 
+#### Variáveis de Ambiente (Opcionais):
 ```env
 ENVIRONMENT=production
-DOMAIN=lstm.ml.caiosaldanha.com
 PYTHONUNBUFFERED=1
 TF_CPP_MIN_LOG_LEVEL=2
-MODEL_EPOCHS=10
-MODEL_BATCH_SIZE=1
-GRAFANA_ADMIN_PASSWORD=seu_password_seguro
+GF_SECURITY_ADMIN_PASSWORD=seu_password_seguro
 ```
-
-### 3. Configurar Build
-
-- **Build Command**: `docker-compose build`
-- **Dockerfile**: `Dockerfile`
-- **Context**: `./`
-
-### 4. Configurar Deploy
-
-- **Deploy Command**: `docker-compose up -d`
-- **Port**: `8000`
-- **Health Check**: `/health`
 
 ## 🌐 URLs de Acesso
 
 Após o deploy, a aplicação estará disponível em:
 
 - **API Principal**: https://lstm.ml.caiosaldanha.com
-- **Documentação**: https://lstm.ml.caiosaldanha.com/docs
+- **Documentação Swagger**: https://lstm.ml.caiosaldanha.com/docs
+- **Health Check**: https://lstm.ml.caiosaldanha.com/health
 - **Prometheus**: https://lstm.ml.caiosaldanha.com/prometheus
 - **Grafana**: https://lstm.ml.caiosaldanha.com/grafana
 
-## 🔐 Credenciais
+### Credenciais Grafana
+- **Usuário**: `admin`
+- **Senha**: `admin123` (padrão) ou conforme configurado na variável de ambiente
 
-### Grafana
-- **Usuário**: admin
-- **Senha**: Definida na variável `GRAFANA_ADMIN_PASSWORD`
+## ⚙️ Stack Completa
 
-## 📊 Monitoramento
+O projeto inclui três serviços principais:
 
-A aplicação inclui monitoramento completo:
+### 1. Bitcoin LSTM API (Porta 8000)
+- FastAPI com endpoints de treino e predição
+- Métricas Prometheus integradas
+- Health checks automáticos
+- Persistência de modelos
 
-### Métricas Prometheus
-Disponíveis em `/metrics`:
-- Requisições por endpoint
-- Tempo de resposta
-- Uso de CPU/Memória
-- Predições realizadas
-- Acurácia do modelo
+### 2. Prometheus (Porta 9090)
+- Coleta de métricas da API
+- Retenção de dados por 200h
+- Interface web para consultas
+- Configuração automática
 
-### Dashboard Grafana
-Dashboard pré-configurado com:
-- Taxa de requisições
-- Tempo de resposta (percentis)
-- Uso de recursos do sistema
-- Performance do modelo ML
-- Contadores de predições
+### 3. Grafana (Porta 3000)
+- Dashboard pré-configurado
+- Visualizações em tempo real
+- Métricas de performance
+- Alertas personalizáveis
 
-## 🚀 Deploy Manual
+## ⚙️ Configuração Automática
 
-Se preferir fazer deploy manual via SSH:
+O `docker-compose.yml` inclui todos os serviços:
 
-```bash
-# 1. Conectar na VPS
-ssh seu-usuario@sua-vps
-
-# 2. Clonar repositório
-git clone https://github.com/seu-usuario/bitcoin-lstm-predictor.git
-cd bitcoin-lstm-predictor
-
-# 3. Deploy
-ENVIRONMENT=production DOMAIN=lstm.ml.caiosaldanha.com ./run.sh deploy
+```yaml
+services:
+  app:
+    # API principal com métricas
+    container_name: bitcoin-lstm-api
+    labels:
+      - traefik.http.routers.lstm-api.rule=Host(`lstm.ml.caiosaldanha.com`)
+      
+  prometheus:
+    # Monitoramento de métricas
+    container_name: bitcoin-lstm-prometheus
+    labels:
+      - traefik.http.routers.lstm-prometheus.rule=Host(`lstm.ml.caiosaldanha.com`) && PathPrefix(`/prometheus`)
+      
+  grafana:
+    # Dashboards e visualizações
+    container_name: bitcoin-lstm-grafana
+    labels:
+      - traefik.http.routers.lstm-grafana.rule=Host(`lstm.ml.caiosaldanha.com`) && PathPrefix(`/grafana`)
 ```
 
-## 🔄 Comandos de Gerenciamento
+## ✅ Verificações Pós-Deploy
 
+### 1. Health Check da API
 ```bash
-# Verificar status
-./run.sh status
-
-# Ver logs
-./run.sh logs
-
-# Treinar modelo
-./run.sh train
-
-# Fazer predição
-./run.sh predict
-
-# Avaliar modelo
-./run.sh evaluate
-
-# Parar aplicação
-./run.sh stop
-
-# Reiniciar
-./run.sh restart
-```
-
-## 🧪 Teste após Deploy
-
-```bash
-# Teste de saúde
 curl https://lstm.ml.caiosaldanha.com/health
+```
 
+### 2. Métricas Prometheus
+```bash
+curl https://lstm.ml.caiosaldanha.com/metrics
+```
+
+### 3. Acesso ao Grafana
+```bash
+# Acesse no navegador
+https://lstm.ml.caiosaldanha.com/grafana
+```
+
+### 4. Teste Completo
+```bash
 # Treinar modelo
-curl -X POST https://lstm.ml.caiosaldanha.com/train
+curl -X POST "https://lstm.ml.caiosaldanha.com/train"
 
 # Fazer predição
-curl https://lstm.ml.caiosaldanha.com/predict
+curl -X POST "https://lstm.ml.caiosaldanha.com/predict"
 
 # Ver métricas
-curl https://lstm.ml.caiosaldanha.com/monitoring
+curl "https://lstm.ml.caiosaldanha.com/monitoring"
 ```
 
-## 📝 Logs e Debug
+## 📊 Monitoramento Disponível
 
-### Ver logs via Dokploy
-1. Acesse o painel do Dokploy
-2. Vá em "Applications"
-3. Selecione `bitcoin-lstm-predictor`  
-4. Clique em "Logs"
+### Métricas da API:
+- **Taxa de requisições** por endpoint
+- **Tempo de resposta** (percentis 50, 95, 99)
+- **Número de predições** realizadas
+- **Acurácia do modelo** em tempo real
+- **Uso de CPU e memória**
 
-### Via SSH
-```bash
-# Logs da aplicação
-docker logs bitcoin-lstm-api -f
+### Dashboard Grafana:
+- **Request Rate**: Taxa de requisições em tempo real
+- **Response Time**: Latência da API
+- **Total Predictions**: Contador de predições
+- **System Resources**: Uso de recursos
+- **Model Performance**: Métricas do LSTM
 
-# Logs do Prometheus
-docker logs bitcoin-lstm-prometheus -f
+## 🔄 Deploy Automático
 
-# Logs do Grafana
-docker logs bitcoin-lstm-grafana -f
-```
+O projeto está configurado para deploy automático:
+
+1. **Push para main**: Cada commit triggers novo deploy
+2. **Build multi-serviço**: API, Prometheus e Grafana
+3. **Health checks**: Verificação automática dos serviços
+4. **SSL automático**: Let's Encrypt para todos os serviços
+5. **Persistência**: Volumes para modelos e dados de monitoramento
 
 ## 🔧 Troubleshooting
 
-### Problema: Container não inicia
+### Problema: Grafana não carrega
+**Solução**: Verifique se o serviço está rodando e se o path `/grafana` está acessível:
 ```bash
-# Verificar status
-docker ps -a
-
-# Ver logs detalhados
-docker logs bitcoin-lstm-api
-
-# Rebuild clean
-docker-compose down
-docker system prune -f
-docker-compose up -d --build
+docker-compose logs grafana
 ```
 
-### Problema: SSL não funciona
-- Verificar se domínio aponta para VPS
-- Verificar configuração do Traefik
-- Verificar labels do Docker Compose
-
-### Problema: Grafana sem dados
+### Problema: Métricas não aparecem
+**Solução**: Verifique se o Prometheus está coletando dados da API:
 ```bash
-# Verificar targets do Prometheus
-curl http://localhost:9090/api/v1/targets
-
-# Reiniciar stack
-docker-compose restart
+# Acesse Prometheus e verifique targets
+https://lstm.ml.caiosaldanha.com/prometheus/targets
 ```
 
-### Problema: Modelo não treina
-- Verificar conectividade com Yahoo Finance
-- Verificar recursos disponíveis (RAM/CPU)
-- Ver logs específicos do erro
-
-## 📊 Métricas de Performance
-
-### Recursos Mínimos Recomendados
-- **CPU**: 2 vCPUs
-- **RAM**: 4GB  
-- **Storage**: 10GB SSD
-- **Largura de Banda**: 100Mbps
-
-### Limites de Container
-Configurados no docker-compose.yml:
-- API: 2GB RAM, 1.5 CPU
-- Prometheus: 1GB RAM, 0.5 CPU  
-- Grafana: 512MB RAM, 0.3 CPU
-
-## 🔄 Atualizações
-
-Para atualizar a aplicação:
-
+### Problema: Modelo não encontrado
+**Solução**: Execute o treinamento inicial:
 ```bash
-# Via Dokploy: Push para branch main
-git push origin main
-
-# Via SSH manual:
-git pull origin main
-docker-compose down
-docker-compose up -d --build
+curl -X POST "https://lstm.ml.caiosaldanha.com/train"
 ```
 
-## 🆘 Suporte
+## 🔒 Segurança
 
-- **Issues**: GitHub Issues do projeto
-- **Logs**: Disponíveis via Dokploy ou SSH
-- **Monitoring**: Dashboard Grafana em tempo real
-- **Health**: Endpoint `/health` para verificações
+- ✅ HTTPS automático via Let's Encrypt
+- ✅ Containers não-root
+- ✅ Health checks integrados
+- ✅ Restart automático em caso de falha
+- ✅ Volumes persistentes isolados
+- ✅ Rede Docker isolada (dokploy-network)
+
+## 📝 Logs
+
+Para visualizar logs dos serviços:
+
+```bash
+# Logs da API
+docker-compose logs -f app
+
+# Logs do Prometheus
+docker-compose logs -f prometheus
+
+# Logs do Grafana
+docker-compose logs -f grafana
+```
+
+## 🎯 Próximos Passos
+
+Após o deploy bem-sucedido:
+
+1. **Execute o treinamento inicial**:
+   ```bash
+   curl -X POST "https://lstm.ml.caiosaldanha.com/train"
+   ```
+
+2. **Acesse o Grafana** e configure alertas se necessário
+
+3. **Monitore performance** via dashboard
+
+4. **Configure backup** dos volumes de dados se necessário
+
+---
+
+✨ **Deploy completo com monitoramento integrado!**

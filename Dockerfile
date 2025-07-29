@@ -9,11 +9,10 @@ ENV PYTHONUNBUFFERED=1 \
 # Definir diretório de trabalho
 WORKDIR /app
 
-# Instalar dependências do sistema
+# Instalar dependências do sistema mínimas
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
-    wget \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
@@ -38,10 +37,6 @@ USER app
 
 # Expor porta
 EXPOSE 8000
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:8000/health || exit 1
 
 # Comando para executar a aplicação
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

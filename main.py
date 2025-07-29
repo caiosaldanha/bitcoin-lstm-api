@@ -12,10 +12,18 @@ import os
 import time
 import psutil
 import json
+import logging
 from typing import Dict, Any, List
 from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 from fastapi.responses import Response
 from contextlib import asynccontextmanager
+
+# Configurar logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Métricas do Prometheus
 REQUEST_COUNT = Counter('bitcoin_lstm_requests_total', 'Total requests', ['method', 'endpoint', 'status'])
@@ -156,7 +164,17 @@ def build_lstm_model(input_shape):
 
 @app.get("/")
 async def root():
-    return {"message": "Bitcoin LSTM Predictor API", "status": "running"}
+    logger.info("Root endpoint accessed")
+    return {
+        "message": "Bitcoin LSTM Predictor API", 
+        "status": "running",
+        "version": "1.0.0",
+        "timestamp": datetime.datetime.now().isoformat(),
+        "model_status": "ready" if (
+            os.path.exists('lstm_files/lstm_model.joblib') and 
+            os.path.exists('lstm_files/scaler.joblib')
+        ) else "needs_training"
+    }
 
 @app.post("/train", response_model=TrainingResponse)
 async def train_model():
@@ -386,11 +404,44 @@ async def get_prometheus_metrics():
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
-    return {
-        "status": "healthy",
-        "timestamp": datetime.datetime.now().isoformat(),
-        "version": "1.0.0"
-    }
+    logger.info("Health check endpoint accessed")
+    
+    try:
+        # Verificar saúde básica da aplicação
+        model_exists = os.path.exists('lstm_files/lstm_model.joblib')
+        scaler_exists = os.path.exists('lstm_files/scaler.joblib')
+        
+        # Verificar recursos do sistema
+        cpu_usage = psutil.cpu_percent()
+        memory = psutil.virtual_memory()
+        
+        health_status = {
+            "status": "healthy",
+            "timestamp": datetime.datetime.now().isoformat(),
+            "version": "1.0.0",
+            "model_ready": model_exists and scaler_exists,
+            "system": {
+                "cpu_usage_percent": cpu_usage,
+                "memory_usage_percent": memory.percent,
+                "memory_available_mb": memory.available / 1024 / 1024
+            },
+            "components": {
+                "model_file": model_exists,
+                "scaler_file": scaler_exists,
+                "lstm_files_dir": os.path.exists('lstm_files')
+            }
+        }
+        
+        logger.info(f"Health check result: {health_status}")
+        return health_status
+        
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
+        return {
+            "status": "unhealthy",
+            "timestamp": datetime.datetime.now().isoformat(),
+            "error": str(e)
+        }
 
 if __name__ == "__main__":
     import uvicorn

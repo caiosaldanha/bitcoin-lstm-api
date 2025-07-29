@@ -1,19 +1,16 @@
 services:
-  bitcoin-lstm-api:
-    build: .
+  app:
+    build: 
+      context: .
+      dockerfile: Dockerfile
     container_name: bitcoin-lstm-api
     volumes:
       - lstm_model_data:/app/lstm_files
     environment:
       - PYTHONUNBUFFERED=1
       - TF_CPP_MIN_LOG_LEVEL=2
+      - ENVIRONMENT=production
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
     networks:
       - dokploy-network
     labels:
@@ -22,12 +19,14 @@ services:
       - traefik.http.routers.lstm-api.entrypoints=websecure
       - traefik.http.routers.lstm-api.tls.certResolver=letsencrypt
       - traefik.http.services.lstm-api.loadbalancer.server.port=8000
-      # CORS middleware para permitir acesso externo
-      - traefik.http.middlewares.lstm-cors.headers.accesscontrolallowmethods=GET,OPTIONS,PUT,POST,DELETE,PATCH
-      - traefik.http.middlewares.lstm-cors.headers.accesscontrolalloworiginlist=*
-      - traefik.http.middlewares.lstm-cors.headers.accesscontrolmaxage=100
-      - traefik.http.middlewares.lstm-cors.headers.addvaryheader=true
-      - traefik.http.routers.lstm-api.middlewares=lstm-cors
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    expose:
+      - "8000"
 
   prometheus:
     image: prom/prometheus:v2.45.0

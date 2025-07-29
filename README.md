@@ -158,22 +158,23 @@ sequenceDiagram
 
 ## 🚀 Instalação
 
-### Opção 1: Deploy Produção (Dokploy + Traefik)
+### Opção 1: Deploy Produção (Dokploy)
 
 ```bash
 # Clone o repositório
 git clone https://github.com/seu-usuario/bitcoin-lstm-predictor.git
 cd bitcoin-lstm-predictor
 
-# Deploy direto para produção
-./run.sh deploy lstm.ml.caiosaldanha.com
+# Configure no painel do Dokploy para deploy automático
+# O deploy acontece automaticamente a cada push na branch main
 ```
 
 **URLs de Produção:**
 - **API**: https://lstm.ml.caiosaldanha.com
 - **Docs**: https://lstm.ml.caiosaldanha.com/docs  
-- **Grafana**: https://lstm.ml.caiosaldanha.com/grafana
+- **Health**: https://lstm.ml.caiosaldanha.com/health
 - **Prometheus**: https://lstm.ml.caiosaldanha.com/prometheus
+- **Grafana**: https://lstm.ml.caiosaldanha.com/grafana
 
 > 📖 **Veja [DEPLOY.md](DEPLOY.md) para instruções detalhadas de deploy no Dokploy**
 
@@ -185,10 +186,10 @@ git clone https://github.com/seu-usuario/bitcoin-lstm-predictor.git
 cd bitcoin-lstm-predictor
 
 # Execute com Docker Compose
-./run.sh start
+docker-compose up -d --build
 
-# Ou manualmente
-docker-compose up -d
+# Ver logs
+docker-compose logs -f app
 ```
 
 ### Opção 3: Ambiente Local
@@ -301,12 +302,14 @@ Métricas disponíveis:
 
 ## 🐳 Deploy com Docker
 
-### Deploy Produção (Dokploy + Traefik)
+### Deploy Automático (Dokploy)
+
+O projeto está configurado para deploy automático no **Dokploy** com SSL automático via Let's Encrypt.
 
 ```mermaid
 graph TB
-    subgraph "Internet"
-        U[Users]
+    subgraph "GitHub"
+        G[Repository<br/>Push to main]
     end
     
     subgraph "VPS + Dokploy"
@@ -315,22 +318,24 @@ graph TB
         end
         
         subgraph "Bitcoin LSTM Stack"
-            A[bitcoin-lstm-api<br/>lstm.ml.caiosaldanha.com]
-            B[prometheus<br/>lstm.ml.caiosaldanha.com/prometheus]
-            C[grafana<br/>lstm.ml.caiosaldanha.com/grafana]
+            A[bitcoin-lstm-api<br/>lstm.ml.caiosaldanha.com<br/>Port: 8000]
+            B[prometheus<br/>lstm.ml.caiosaldanha.com/prometheus<br/>Port: 9090]
+            C[grafana<br/>lstm.ml.caiosaldanha.com/grafana<br/>Port: 3000]
         end
         
-        subgraph "Volumes"
+        subgraph "Storage"
             D[lstm_model_data<br/>Persistent Models]
             E[prometheus_data<br/>Metrics Storage]
-            F[grafana_data<br/>Dashboard Config]
+            F[grafana_data<br/>Dashboard Storage]
         end
     end
     
-    U --> T
+    G -->|Auto Deploy| A
     T --> A
     T --> B
     T --> C
+    A --> B
+    B --> C
     A -.-> D
     B -.-> E
     C -.-> F
@@ -339,84 +344,61 @@ graph TB
     style A fill:#e1f5fe
     style B fill:#fff3e0
     style C fill:#e8f5e8
-```
-
-### Estrutura de Serviços
-
-```mermaid
-graph TB
-    subgraph "Docker Compose Stack"
-        subgraph "Application"
-            A[bitcoin-lstm-api<br/>Port: 8000]
-        end
-        
-        subgraph "Monitoring"
-            B[prometheus<br/>Port: 9090]
-            C[grafana<br/>Port: 3000]
-        end
-        
-        subgraph "Volumes"
-            D[lstm_model_data<br/>Model Storage]
-            E[prometheus_data<br/>Metrics Storage]
-            F[grafana_data<br/>Dashboard Storage]
-        end
-        
-        subgraph "Network"
-            G[dokploy-network<br/>External]
-        end
-    end
-    
-    A --> B
-    B --> C
-    A -.-> D
-    B -.-> E
-    C -.-> F
-    A --- G
-    B --- G
-    C --- G
-    
-    style A fill:#e1f5fe
-    style B fill:#fff3e0
-    style C fill:#e8f5e8
     style D fill:#fce4ec
     style E fill:#fce4ec
     style F fill:#fce4ec
 ```
 
-### Comandos Docker
+### Configuração no Dokploy
+
+1. **Conectar Repositório:**
+   - Adicione este repositório GitHub no painel Dokploy
+   - Configure para deploy automático na branch `main`
+
+2. **Configuração Automática:**
+   - O `docker-compose.yml` já possui todas as configurações necessárias
+   - SSL automático via Let's Encrypt
+   - Health checks integrados
+   - Persistência de dados
+   - Monitoramento completo com Prometheus e Grafana
+
+3. **URLs de Acesso:**
+   - **API principal**: `https://lstm.ml.caiosaldanha.com`
+   - **Documentação**: `https://lstm.ml.caiosaldanha.com/docs`
+   - **Health check**: `https://lstm.ml.caiosaldanha.com/health`
+   - **Prometheus**: `https://lstm.ml.caiosaldanha.com/prometheus`
+   - **Grafana**: `https://lstm.ml.caiosaldanha.com/grafana`
+
+### Para Desenvolvimento Local
 
 ```bash
-# Deploy produção
-./run.sh deploy [dominio]
-
-# Build e start desenvolvimento
-./run.sh start
+# Build e start
+docker-compose up -d --build
 
 # Ver logs
-./run.sh logs
+docker-compose logs -f
 
 # Parar serviços
-./run.sh stop
+docker-compose down
 
-# Rebuild apenas a API
-docker-compose up -d --build bitcoin-lstm-api
-
-# Limpar volumes (CUIDADO: remove dados)
-./run.sh clean
+# Limpar volumes (CUIDADO: remove modelos salvos)
+docker-compose down -v
 ```
 
-### Portas e Acessos
+### Estrutura Completa com Monitoramento
 
 | Ambiente | Serviço | URL | Descrição |
 |----------|---------|-----|-----------|
 | **Produção** | API | https://lstm.ml.caiosaldanha.com | Aplicação principal |
-| | Swagger | https://lstm.ml.caiosaldanha.com/docs | Documentação |
-| | Prometheus | https://lstm.ml.caiosaldanha.com/prometheus | Métricas |
-| | Grafana | https://lstm.ml.caiosaldanha.com/grafana | Dashboards |
+| | Swagger | https://lstm.ml.caiosaldanha.com/docs | Documentação interativa |
+| | Health | https://lstm.ml.caiosaldanha.com/health | Status da aplicação |
+| | Prometheus | https://lstm.ml.caiosaldanha.com/prometheus | Métricas do sistema |
+| | Grafana | https://lstm.ml.caiosaldanha.com/grafana | Dashboards e visualizações |
 | **Local** | API | http://localhost:8000 | Aplicação principal |
-| | Swagger | http://localhost:8000/docs | Documentação |
-| | Prometheus | http://localhost:9090 | Métricas |
-| | Grafana | http://localhost:3000 | Dashboards |
+| | Swagger | http://localhost:8000/docs | Documentação interativa |
+| | Health | http://localhost:8000/health | Status da aplicação |
+| | Prometheus | http://localhost:9090 | Métricas do sistema |
+| | Grafana | http://localhost:3000 | Dashboards (admin/admin123) |
 
 ## 👨‍💻 Desenvolvimento
 
