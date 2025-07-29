@@ -18,28 +18,38 @@ def load_model_safely(model_path):
     """Carrega o modelo de forma segura, lidando com diferentes versões e formatos"""
     import os
     
-    # Primeiro verifica se é um modelo Keras salvo no formato nativo
+    # Primeiro verifica se é um modelo Keras salvo no formato nativo (PRIORIDADE)
     keras_path = model_path.replace('.joblib', '.keras')
     h5_path = model_path.replace('.joblib', '.h5')
     
     try:
-        # Tentativa 1: Carregar como modelo Keras nativo
+        # Tentativa 1: Carregar como modelo Keras nativo (.keras)
         if os.path.exists(keras_path):
             import tensorflow as tf
+            print(f"Carregando modelo Keras nativo: {keras_path}")
             return tf.keras.models.load_model(keras_path)
-        elif os.path.exists(h5_path):
-            import tensorflow as tf
-            return tf.keras.models.load_model(h5_path)
     except Exception as e:
-        print(f"Falha ao carregar modelo Keras nativo: {e}")
+        print(f"Falha ao carregar modelo .keras: {e}")
     
     try:
-        # Tentativa 2: Carregamento joblib normal
+        # Tentativa 2: Carregar como modelo H5
+        if os.path.exists(h5_path):
+            import tensorflow as tf
+            print(f"Carregando modelo H5: {h5_path}")
+            return tf.keras.models.load_model(h5_path)
+    except Exception as e:
+        print(f"Falha ao carregar modelo .h5: {e}")
+    
+    # Se chegou aqui, não tem modelo em formato nativo, tenta joblib
+    print(f"Tentando carregar modelo joblib: {model_path}")
+    
+    try:
+        # Tentativa 3: Carregamento joblib normal
         return joblib.load(model_path)
     except (ImportError, ModuleNotFoundError) as e:
         if 'keras' in str(e):
             try:
-                # Tentativa 3: Com tensorflow.keras
+                # Tentativa 4: Com tensorflow.keras
                 import tensorflow as tf
                 import sys
                 if 'keras.src' in str(e):
@@ -55,16 +65,7 @@ def load_model_safely(model_path):
             raise e
     except AttributeError as e:
         if '_unpickle_model' in str(e):
-            try:
-                # Tentativa 4: Usar tensorflow.keras.models.load_model com joblib 
-                import tensorflow as tf
-                import pickle
-                
-                # Tenta carregar diretamente como pickle
-                with open(model_path, 'rb') as f:
-                    return pickle.load(f)
-            except Exception as e2:
-                raise Exception(f"Modelo foi salvo incorretamente com joblib. Erro original: {str(e)}. Erro pickle: {str(e2)}. Recomenda-se retreinar o modelo usando model.save() do Keras.")
+            raise Exception(f"❌ Modelo foi salvo incorretamente com joblib. Execute o script train_model.py para retreinar o modelo corretamente. Erro: {str(e)}")
         else:
             raise e
 
