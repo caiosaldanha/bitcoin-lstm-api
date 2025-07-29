@@ -15,20 +15,35 @@ from fastapi.responses import Response
 
 # Função para carregar modelo com compatibilidade de versões
 def load_model_safely(model_path):
-    """Carrega o modelo de forma segura, lidando com diferentes versões do Keras"""
+    """Carrega o modelo de forma segura, lidando com diferentes versões e formatos"""
+    import os
+    
+    # Primeiro verifica se é um modelo Keras salvo no formato nativo
+    keras_path = model_path.replace('.joblib', '.keras')
+    h5_path = model_path.replace('.joblib', '.h5')
+    
     try:
-        # Primeira tentativa: carregamento normal
+        # Tentativa 1: Carregar como modelo Keras nativo
+        if os.path.exists(keras_path):
+            import tensorflow as tf
+            return tf.keras.models.load_model(keras_path)
+        elif os.path.exists(h5_path):
+            import tensorflow as tf
+            return tf.keras.models.load_model(h5_path)
+    except Exception as e:
+        print(f"Falha ao carregar modelo Keras nativo: {e}")
+    
+    try:
+        # Tentativa 2: Carregamento joblib normal
         return joblib.load(model_path)
     except (ImportError, ModuleNotFoundError) as e:
         if 'keras' in str(e):
             try:
-                # Tentativa com tensorflow.keras
+                # Tentativa 3: Com tensorflow.keras
                 import tensorflow as tf
-                # Força o uso do tensorflow.keras
                 import sys
                 if 'keras.src' in str(e):
                     # Redirect keras imports to tensorflow.keras
-                    import keras
                     sys.modules['keras.src'] = tf.keras
                     sys.modules['keras.src.models'] = tf.keras.models
                     sys.modules['keras.src.models.sequential'] = tf.keras.models
@@ -36,6 +51,20 @@ def load_model_safely(model_path):
                 return joblib.load(model_path)
             except Exception as e2:
                 raise Exception(f"Erro ao carregar modelo: {str(e)}. Tentativa alternativa falhou: {str(e2)}")
+        else:
+            raise e
+    except AttributeError as e:
+        if '_unpickle_model' in str(e):
+            try:
+                # Tentativa 4: Usar tensorflow.keras.models.load_model com joblib 
+                import tensorflow as tf
+                import pickle
+                
+                # Tenta carregar diretamente como pickle
+                with open(model_path, 'rb') as f:
+                    return pickle.load(f)
+            except Exception as e2:
+                raise Exception(f"Modelo foi salvo incorretamente com joblib. Erro original: {str(e)}. Erro pickle: {str(e2)}. Recomenda-se retreinar o modelo usando model.save() do Keras.")
         else:
             raise e
 
@@ -235,12 +264,19 @@ async def model_info():
     model_exists = os.path.exists('lstm_files/lstm_model.joblib')
     scaler_exists = os.path.exists('lstm_files/scaler.joblib')
     
+    # Verifica formatos alternativos
+    keras_exists = os.path.exists('lstm_files/lstm_model.keras')
+    h5_exists = os.path.exists('lstm_files/lstm_model.h5')
+    
     return {
         "model_exists": model_exists,
         "scaler_exists": scaler_exists,
+        "keras_model_exists": keras_exists,
+        "h5_model_exists": h5_exists,
         "model_path": "lstm_files/lstm_model.joblib",
         "scaler_path": "lstm_files/scaler.joblib",
-        "status": "ready" if (model_exists and scaler_exists) else "needs_training"
+        "status": "ready" if (model_exists and scaler_exists) else "needs_training",
+        "recommendation": "Se o modelo não carrega, considere retreinar usando model.save() ao invés de joblib.dump()"
     }
 
 @app.get("/evaluate", response_model=ModelEvaluationResponse)
