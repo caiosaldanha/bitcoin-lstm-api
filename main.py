@@ -1,59 +1,6 @@
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
-import pandas as pd
-import numpy as np
-from sklearn.preprocessing import MinMaxScaler
-from keras.models import Sequential
-from keras.layers import LSTM, Dense, Dropout
-import yfinance as yf
-import joblib
-import datetime
-import os
-import time
-import psutil
-import json
-import logging
-from typing import Dict, Any, List
-from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
-from fastapi.responses import Response
-from contextlib import asynccontextmanager
 
-# Configurar logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-# Métricas do Prometheus
-REQUEST_COUNT = Counter('bitcoin_lstm_requests_total', 'Total requests', ['method', 'endpoint', 'status'])
-REQUEST_DURATION = Histogram('bitcoin_lstm_request_duration_seconds', 'Request duration', ['method', 'endpoint'])
-MODEL_PREDICTIONS = Counter('bitcoin_lstm_predictions_total', 'Total predictions made')
-MODEL_TRAINING_TIME = Histogram('bitcoin_lstm_training_duration_seconds', 'Model training duration')
-SYSTEM_CPU_USAGE = Gauge('bitcoin_lstm_cpu_usage_percent', 'CPU usage percentage')
-SYSTEM_MEMORY_USAGE = Gauge('bitcoin_lstm_memory_usage_bytes', 'Memory usage in bytes')
-MODEL_ACCURACY_GAUGE = Gauge('bitcoin_lstm_model_r2_score', 'Model R2 score from last training')
-
-# Armazenar métricas do último treinamento
-training_metrics_cache = {}
-
-app = FastAPI(title="Bitcoin LSTM Predictor", version="1.0.0")
-
-
-
-class PredictionResponse(BaseModel):
-    current_date: str
-    next_day_prediction: float
-    last_known_price: float
-
-class ModelEvaluationResponse(BaseModel):
-    model_exists: bool
-    training_date: str
-    rmse: float
-    mae: float
-    r2: float
-    training_duration: float
-    data_points_used: int
 
 class MonitoringResponse(BaseModel):
     timestamp: str
