@@ -26,6 +26,13 @@ RUN pip install --no-cache-dir --upgrade pip && \
 COPY main.py .
 COPY lstm_files lstm_files
 
+# Debug: List contents of lstm_files to verify copy
+RUN echo "=== Conteúdo do diretório lstm_files após COPY ===" && \
+    ls -la lstm_files/ && \
+    echo "=== Verificando tamanhos dos arquivos ===" && \
+    find lstm_files/ -name "*.joblib" -exec ls -lh {} \; && \
+    echo "=== Fim da verificação ==="
+
 # Garantir permissões corretas e checar arquivos obrigatórios
 RUN chmod -R 755 lstm_files && \
     test -f lstm_files/lstm_model.joblib && \
