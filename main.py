@@ -13,6 +13,32 @@ from pydantic import BaseModel
 from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 from fastapi.responses import Response
 
+# Função para carregar modelo com compatibilidade de versões
+def load_model_safely(model_path):
+    """Carrega o modelo de forma segura, lidando com diferentes versões do Keras"""
+    try:
+        # Primeira tentativa: carregamento normal
+        return joblib.load(model_path)
+    except (ImportError, ModuleNotFoundError) as e:
+        if 'keras' in str(e):
+            try:
+                # Tentativa com tensorflow.keras
+                import tensorflow as tf
+                # Força o uso do tensorflow.keras
+                import sys
+                if 'keras.src' in str(e):
+                    # Redirect keras imports to tensorflow.keras
+                    import keras
+                    sys.modules['keras.src'] = tf.keras
+                    sys.modules['keras.src.models'] = tf.keras.models
+                    sys.modules['keras.src.models.sequential'] = tf.keras.models
+                
+                return joblib.load(model_path)
+            except Exception as e2:
+                raise Exception(f"Erro ao carregar modelo: {str(e)}. Tentativa alternativa falhou: {str(e2)}")
+        else:
+            raise e
+
 
 # Pydantic Models
 class PredictionResponse(BaseModel):
@@ -135,8 +161,8 @@ async def model_check() -> Dict:
         # Tenta carregar os arquivos se existirem
         if result["model_exists"]:
             try:
-                model = joblib.load(model_path)
-                logs.append(f"joblib.load OK para {model_path}")
+                model = load_model_safely(model_path)
+                logs.append(f"load_model_safely OK para {model_path}")
                 logs.append(f"Tipo do modelo: {type(model)}")
             except Exception as e:
                 logs.append(f"Erro ao carregar {model_path}: {str(e)}")
@@ -165,7 +191,7 @@ async def predict_next_day():
             ERROR_COUNT.labels(endpoint="/predict").inc()
             raise HTTPException(status_code=404, detail="Modelo não encontrado. Execute o treinamento primeiro.")
 
-        model = joblib.load('lstm_files/lstm_model.joblib')
+        model = load_model_safely('lstm_files/lstm_model.joblib')
         scaler = joblib.load('lstm_files/scaler.joblib')
 
         ticker_symbol = "BTC-USD"
