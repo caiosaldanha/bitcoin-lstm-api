@@ -108,10 +108,6 @@ venv.bak/
 .dmypy.json
 dmypy.json
 
-# Model files (too large for git)
-lstm_files/*.joblib
-lstm_files/*.json
-
 # Docker volumes
 prometheus_data/
 grafana_data/
