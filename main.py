@@ -106,23 +106,30 @@ def prepare_data():
     ticker_symbol = "BTC-USD"
     start_date = "2018-01-01"
     end_date = datetime.date.today().strftime("%Y-%m-%d")
+
+    # Obter dados do Yahoo Finance
     data = yf.download(ticker_symbol, start=start_date, end=end_date)
-    
+    if data.empty:
+        raise HTTPException(status_code=400, detail="Nenhum dado retornado para o período especificado.")
+
     # Selecionar os preços de fechamento
     close_prices = data['Close'].values
+    if len(close_prices) == 0:
+        raise HTTPException(status_code=400, detail="Dados insuficientes para treinamento.")
+
     close_prices = close_prices.reshape(-1, 1)
-    
+
     # Escalar os dados entre 0 e 1
     scaler = MinMaxScaler(feature_range=(0, 1))
     scaled_data = scaler.fit_transform(close_prices)
-    
+
     # Definir o tamanho dos dados de treino
     training_data_len = int(np.ceil(len(scaled_data) * 0.8))
-    
+
     # Dividir os dados
     train_data = scaled_data[:training_data_len]
     test_data = scaled_data[training_data_len - 40:]
-    
+
     return data, close_prices, scaler, scaled_data, train_data, test_data, training_data_len
 
 def create_training_data(train_data):
