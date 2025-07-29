@@ -41,7 +41,3 @@ ENV/
 # Ignore temporary files
 *.tmp
 *.temp
-
-# Keep lstm_files structure but ignore contents
-lstm_files/*.joblib
-lstm_files/*.json
